@@ -28,7 +28,7 @@ marked.setOptions({renderer: new TerminalRenderer()});
 /* eslint complexity: off */
 async function run(context, plugins) {
   const {cwd, env, options, logger} = context;
-  const {isCi, branch: ciBranch, isPr} = context.envCi;
+  const {isCi, isPr} = context.envCi;
 
   if (!isCi && !options.dryRun && !options.noCi) {
     logger.warn('This run was not triggered in a known CI environment, running in dry-run mode.');
@@ -54,6 +54,35 @@ async function run(context, plugins) {
   // Verify config
   await verify(context);
 
+  const packages = await getPackages(options, context);
+  if (Object.keys(packages).length === 0) {
+    throw new Error('Cannot find packages');
+  }
+
+  for (const pkg of Object.values(packages)) {
+    const pkgContext = Object.assign({}, context);
+
+    let pkgOptions = options;
+    pkgOptions.path = pkg.path;
+    pkgOptions.tagFormat = pkg.json.name + '@${version}';
+
+    await runPackage(pkgContext, plugins, pkgOptions, logger);
+  }
+
+  // TODO push when have new release
+  // Only Push one time
+  if (!options.dryRun) {
+    await push(options.repositoryUrl, {cwd, env});
+    await pushNotes(options.repositoryUrl, {cwd, env});
+    logger.success(`Push to ${options.repositoryUrl}`);
+  }
+}
+
+async function runPackage(context, plugins, options, logger) {
+  const {cwd, env} = context;
+  const {branch: ciBranch} = context.envCi;
+
+  // TODO cache remote call
   options.repositoryUrl = await getGitAuthUrl({...context, branch: {name: ciBranch}});
   context.branches = await getBranches(options.repositoryUrl, ciBranch, context);
   context.branch = context.branches.find(({name}) => name === ciBranch);
@@ -92,32 +121,6 @@ async function run(context, plugins) {
   }
 
   logger.success(`Allowed to push to the Git repository`);
-
-  const packages = await getPackages(options, context);
-  if (Object.keys(packages).length === 0) {
-    throw new Error('Cannot find packages');
-  }
-
-  for (const pkg of Object.values(packages)) {
-    const pkgContext = Object.assign({}, context);
-
-    let pkgOptions = options;
-    pkgOptions.path = pkg.path;
-    pkgOptions.tagFormat = pkg.json.name + '@${version}';
-
-    await runPackage(pkgContext, plugins, pkgOptions, logger);
-  }
-
-  // Only Push one time
-  if (!options.dryRun) {
-    await push(options.repositoryUrl, {cwd, env});
-    await pushNotes(options.repositoryUrl, {cwd, env});
-    logger.success(`Push to ${options.repositoryUrl}`);
-  }
-}
-
-async function runPackage(context, plugins, options, logger) {
-  const {cwd, env} = context;
 
   await plugins.verifyConditions(context);
 
