@@ -232,11 +232,10 @@ async function runPackage(context, plugins, options, pkg, packages) {
 
   nextRelease.notes += generateDependencyNotes(pkg, packages);
   updateVersions(pkg, packages);
-  if (pkg.changed) {
-    logger.log('Write package %s with data %O', pkg.path, pkg.json);
-    if (!options.dryRun) {
-      await writePkg(pkg.path, pkg.json, {normalize: false});
-    }
+
+  logger.log('Write package %s with data %O', pkg.path, pkg.json);
+  if (!options.dryRun) {
+    await writePkg(pkg.path, pkg.json, {normalize: false});
   }
 
   context.nextRelease = nextRelease;
@@ -364,9 +363,7 @@ function generateDependencyRelease(pkg, packages) {
 
 function updateVersions(pkg, packages) {
   // Update self version
-  if (packages[pkg.json.name].nextRelease) {
-    pkg.json.version = packages[pkg.json.name].nextRelease.version;
-  }
+  pkg.json.version = packages[pkg.json.name].nextRelease.version;
 
   // Update dependency versions
   pkg.dependencies.forEach(name => {
