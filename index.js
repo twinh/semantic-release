@@ -1,4 +1,4 @@
-const {pick, forEach} = require('lodash');
+const {pick, forEach, keyBy, last} = require('lodash');
 const marked = require('marked');
 const TerminalRenderer = require('marked-terminal');
 const envCi = require('env-ci');
@@ -22,6 +22,8 @@ const getError = require('./lib/get-error');
 const {COMMIT_NAME, COMMIT_EMAIL} = require('./lib/definitions/constants');
 const glob = require('glob');
 const readPkg = require('read-pkg');
+const toposort = require('toposort');
+const writePkg = require('write-pkg');
 
 marked.setOptions({renderer: new TerminalRenderer()});
 
@@ -66,7 +68,14 @@ async function run(context, plugins) {
     pkgOptions.path = pkg.path;
     pkgOptions.tagFormat = pkg.json.name + '@${version}';
 
-    await runPackage(pkgContext, plugins, pkgOptions, logger);
+    pkg.context = pkgContext;
+    pkg.options = pkgOptions;
+
+    await runPackage(pkgContext, plugins, pkgOptions, pkg, packages);
+  }
+
+  for (const pkg of Object.values(packages)) {
+    await commitPackage(pkg.context, plugins, pkg.options);
   }
 
   // TODO push when have new release
@@ -78,8 +87,8 @@ async function run(context, plugins) {
   }
 }
 
-async function runPackage(context, plugins, options, logger) {
-  const {cwd, env} = context;
+async function runPackage(context, plugins, options, pkg, packages) {
+  const {cwd, env, logger} = context;
   const {branch: ciBranch} = context.envCi;
 
   // TODO cache remote call
@@ -136,7 +145,7 @@ async function runPackage(context, plugins, options, logger) {
     if (context.branch.mergeRange && !semver.satisfies(nextRelease.version, context.branch.mergeRange)) {
       errors.push(getError('EINVALIDMAINTENANCEMERGE', {...context, nextRelease}));
     } else {
-      const commits = await getCommits({...context, lastRelease, nextRelease});
+      const commits = await getCommits({...context, lastRelease, nextRelease}, options.path);
       nextRelease.notes = await plugins.generateNotes({...context, commits, lastRelease, nextRelease});
 
       if (options.dryRun) {
@@ -190,6 +199,14 @@ async function runPackage(context, plugins, options, logger) {
     channel: context.branch.channel || null,
     gitHead: await getGitHead({cwd, env}),
   };
+
+  if (!nextRelease.type) {
+    nextRelease.type = generateDependencyRelease(pkg, packages);
+  }
+
+  // Record for later query
+  pkg.nextRelease = nextRelease;
+
   if (!nextRelease.type) {
     logger.log('There are no relevant changes, so no new version is released.');
     return context.releases.length > 0 ? {releases: context.releases} : false;
@@ -211,9 +228,23 @@ async function runPackage(context, plugins, options, logger) {
 
   await plugins.verifyRelease(context);
 
-  // TODO cal package.json/composer.json dependencies
-  // TODO merge multi changelog commit
   nextRelease.notes = await plugins.generateNotes(context);
+
+  nextRelease.notes += generateDependencyNotes(pkg, packages);
+  updateVersions(pkg, packages);
+  if (pkg.changed) {
+    logger.log('Write package %s with data %O', pkg.path, pkg.json);
+    if (!options.dryRun) {
+      // TODO ignore "readme", "_id"
+      await writePkg(pkg.path, pkg.json);
+    }
+  }
+
+  context.nextRelease = nextRelease;
+}
+
+async function commitPackage(context, plugins, options) {
+  const {cwd, env, logger, nextRelease} = context;
 
   await plugins.prepare(context);
 
@@ -276,13 +307,70 @@ async function getPackages(options, context) {
     const paths = glob.sync(pkg, {cwd: context.cwd});
     for (const path of paths) {
       const json = (await readPkg({cwd: path})) || {};
-      packages[path] = {
+      packages[json.name] = {
         path,
-        json
+        json,
+        dependencies: []
       };
     }
   }
+
+  // TODO support composer.json dependencies
+  let graph = [];
+  forEach(packages, (pkg) => {
+    forEach(Object.assign(
+      {},
+      pkg.json.dependencies || {},
+      pkg.json.devDependencies || {}
+    ), (version, name) => {
+      graph.push([packages[name], pkg]);
+
+      pkg.dependencies.push(name)
+    });
+  });
+
+  packages = toposort(graph);
+  packages = keyBy(packages, 'json.name');
+
   return packages;
+}
+
+function generateDependencyNotes(pkg, packages) {
+  let notes = [];
+  pkg.dependencies.forEach(name => {
+    if (packages[name].nextRelease.version) {
+      notes.push(`* **${name}:** upgraded to ${packages[name].nextRelease.version}`);
+    }
+  });
+  if (notes.length) {
+    notes.unshift('### Dependencies');
+  }
+  return notes.join('\n');
+}
+
+function generateDependencyRelease(pkg, packages) {
+  let type;
+  pkg.dependencies.forEach(name => {
+    if (packages[name].nextRelease.type) {
+      type = 'patch';
+      return false;
+    }
+  });
+  return type;
+}
+
+function updateVersions(pkg, packages) {
+  pkg.dependencies.forEach(name => {
+    if (packages[name].nextRelease.version) {
+      ['devDependencies', 'dependencies'].forEach(key => {
+        if (typeof pkg.json[key] !== 'undefined' && typeof pkg.json[key][name] !== 'undefined') {
+          pkg.json[key][name] = '^' + packages[name].nextRelease.version;
+          pkg.changed = true;
+          return false;
+        }
+      });
+    }
+  });
 }
 
 module.exports = async (cliOptions = {}, {cwd = process.cwd(), env = process.env, stdout, stderr} = {}) => {
