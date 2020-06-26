@@ -24,6 +24,7 @@ const glob = require('glob');
 const readPkg = require('read-pkg');
 const toposort = require('toposort');
 const writePkg = require('write-pkg');
+const path = require('path');
 
 marked.setOptions({renderer: new TerminalRenderer()});
 
@@ -63,6 +64,7 @@ async function run(context, plugins) {
 
   for (const pkg of Object.values(packages)) {
     const pkgContext = Object.assign({}, context);
+    pkgContext.cwd = pkg.path;
 
     let pkgOptions = options;
     pkgOptions.path = pkg.path;
@@ -306,11 +308,11 @@ async function callFail(context, plugins, err) {
 async function getPackages(options, context) {
   let packages = {};
   for (const pkg of options.packages) {
-    const paths = glob.sync(pkg, {cwd: context.cwd});
-    for (const path of paths) {
-      const json = (await readPkg({cwd: path, normalize: false})) || {};
+    const dirs = glob.sync(pkg, {cwd: context.cwd});
+    for (const dir of dirs) {
+      const json = (await readPkg({cwd: dir, normalize: false})) || {};
       packages[json.name] = {
-        path,
+        path: path.join(context.cwd, dir),
         json,
         dependencies: []
       };
