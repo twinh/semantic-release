@@ -235,8 +235,7 @@ async function runPackage(context, plugins, options, pkg, packages) {
   if (pkg.changed) {
     logger.log('Write package %s with data %O', pkg.path, pkg.json);
     if (!options.dryRun) {
-      // TODO ignore "readme", "_id"
-      await writePkg(pkg.path, pkg.json);
+      await writePkg(pkg.path, pkg.json, {normalize: false});
     }
   }
 
@@ -245,6 +244,10 @@ async function runPackage(context, plugins, options, pkg, packages) {
 
 async function commitPackage(context, plugins, options) {
   const {cwd, env, logger, nextRelease} = context;
+
+  if (!nextRelease) {
+    return false;
+  }
 
   await plugins.prepare(context);
 
@@ -306,7 +309,7 @@ async function getPackages(options, context) {
   for (const pkg of options.packages) {
     const paths = glob.sync(pkg, {cwd: context.cwd});
     for (const path of paths) {
-      const json = (await readPkg({cwd: path})) || {};
+      const json = (await readPkg({cwd: path, normalize: false})) || {};
       packages[json.name] = {
         path,
         json,
@@ -360,6 +363,12 @@ function generateDependencyRelease(pkg, packages) {
 }
 
 function updateVersions(pkg, packages) {
+  // Update self version
+  if (packages[pkg.json.name].nextRelease) {
+    pkg.json.version = packages[pkg.json.name].nextRelease.version;
+  }
+
+  // Update dependency versions
   pkg.dependencies.forEach(name => {
     if (packages[name].nextRelease.version) {
       ['devDependencies', 'dependencies'].forEach(key => {
