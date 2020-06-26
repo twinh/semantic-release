@@ -1,4 +1,4 @@
-const {pick} = require('lodash');
+const {pick, forEach} = require('lodash');
 const marked = require('marked');
 const TerminalRenderer = require('marked-terminal');
 const envCi = require('env-ci');
@@ -20,6 +20,8 @@ const getLogger = require('./lib/get-logger');
 const {verifyAuth, isBranchUpToDate, getGitHead, tag, push, pushNotes, getTagHead, addNote} = require('./lib/git');
 const getError = require('./lib/get-error');
 const {COMMIT_NAME, COMMIT_EMAIL} = require('./lib/definitions/constants');
+const glob = require('glob');
+const readPkg = require('read-pkg');
 
 marked.setOptions({renderer: new TerminalRenderer()});
 
@@ -91,6 +93,32 @@ async function run(context, plugins) {
 
   logger.success(`Allowed to push to the Git repository`);
 
+  const packages = await getPackages(options, context);
+  if (Object.keys(packages).length === 0) {
+    throw new Error('Cannot find packages');
+  }
+
+  for (const pkg of Object.values(packages)) {
+    const pkgContext = Object.assign({}, context);
+
+    let pkgOptions = options;
+    pkgOptions.path = pkg.path;
+    pkgOptions.tagFormat = pkg.json.name + '@${version}';
+
+    await runPackage(pkgContext, plugins, pkgOptions, logger);
+  }
+
+  // Only Push one time
+  if (!options.dryRun) {
+    await push(options.repositoryUrl, {cwd, env});
+    await pushNotes(options.repositoryUrl, {cwd, env});
+    logger.success(`Push to ${options.repositoryUrl}`);
+  }
+}
+
+async function runPackage(context, plugins, options, logger) {
+  const {cwd, env} = context;
+
   await plugins.verifyConditions(context);
 
   const errors = [];
@@ -151,7 +179,8 @@ async function run(context, plugins) {
     logger.log(`No git tag version found on branch ${context.branch.name}`);
   }
 
-  context.commits = await getCommits(context);
+  // Filter commits by package path
+  context.commits = await getCommits(context, options.path);
 
   const nextRelease = {
     type: await plugins.analyzeCommits(context),
@@ -179,6 +208,8 @@ async function run(context, plugins) {
 
   await plugins.verifyRelease(context);
 
+  // TODO cal package.json/composer.json dependencies
+  // TODO merge multi changelog commit
   nextRelease.notes = await plugins.generateNotes(context);
 
   await plugins.prepare(context);
@@ -189,8 +220,6 @@ async function run(context, plugins) {
     // Create the tag before calling the publish plugins as some require the tag to exists
     await tag(nextRelease.gitTag, nextRelease.gitHead, {cwd, env});
     await addNote({channels: [nextRelease.channel]}, nextRelease.gitHead, {cwd, env});
-    await push(options.repositoryUrl, {cwd, env});
-    await pushNotes(options.repositoryUrl, {cwd, env});
     logger.success(`Created tag ${nextRelease.gitTag}`);
   }
 
@@ -236,6 +265,21 @@ async function callFail(context, plugins, err) {
       logErrors(context, error);
     }
   }
+}
+
+async function getPackages(options, context) {
+  let packages = {};
+  for (const pkg of options.packages) {
+    const paths = glob.sync(pkg, {cwd: context.cwd});
+    for (const path of paths) {
+      const json = (await readPkg({cwd: path})) || {};
+      packages[path] = {
+        path,
+        json
+      };
+    }
+  }
+  return packages;
 }
 
 module.exports = async (cliOptions = {}, {cwd = process.cwd(), env = process.env, stdout, stderr} = {}) => {
