@@ -76,7 +76,19 @@ async function run(context, plugins) {
     await runPackage(pkgContext, plugins, pkgOptions, pkg, packages);
   }
 
+  // Push "releaseToAdd" one time
+  if (!options.dryRun) {
+    for (const pkg of Object.values(packages)) {
+      if (pkg.context.releaseToAdd) {
+        await push(options.repositoryUrl, {cwd, env});
+        await pushNotes(options.repositoryUrl, {cwd, env});
+        break;
+      }
+    }
+  }
+
   for (const pkg of Object.values(packages)) {
+    await newRelease(pkg.context, plugins, pkg.options, pkg, packages);
     await commitPackage(pkg.context, plugins, pkg.options);
   }
 
@@ -148,14 +160,16 @@ async function runPackage(context, plugins, options, pkg, packages) {
       errors.push(getError('EINVALIDMAINTENANCEMERGE', {...context, nextRelease}));
     } else {
       const commits = await getCommits({...context, lastRelease, nextRelease}, options.path);
+
       nextRelease.notes = await plugins.generateNotes({...context, commits, lastRelease, nextRelease});
+      pkg.nextRelease = nextRelease;
+      await updateNotesAndVersions(context, options, pkg, packages);
 
       if (options.dryRun) {
         logger.warn(`Skip ${nextRelease.gitTag} tag creation in dry-run mode`);
       } else {
         await addNote({channels: [...currentRelease.channels, nextRelease.channel]}, nextRelease.gitHead, {cwd, env});
-        await push(options.repositoryUrl, {cwd, env});
-        await pushNotes(options.repositoryUrl, {cwd, env});
+
         logger.success(
           `Add ${nextRelease.channel ? `channel ${nextRelease.channel}` : 'default channel'} to tag ${
             nextRelease.gitTag
@@ -163,22 +177,36 @@ async function runPackage(context, plugins, options, pkg, packages) {
         );
       }
 
-      context.branch.tags.push({
-        version: nextRelease.version,
-        channel: nextRelease.channel,
-        gitTag: nextRelease.gitTag,
-        gitHead: nextRelease.gitHead,
-      });
-
-      const releases = await plugins.addChannel({...context, commits, lastRelease, currentRelease, nextRelease});
-      context.releases.push(...releases);
-      await plugins.success({...context, lastRelease, commits, nextRelease, releases});
+      // Record for next step
+      context.commits = commits;
+      context.releaseToAdd = releaseToAdd;
+      return;
     }
   }
 
   if (errors.length > 0) {
     throw new AggregateError(errors);
   }
+}
+
+async function newRelease(context, plugins, options, pkg, packages) {
+  if (context.releaseToAdd) {
+    const {lastRelease, currentRelease, nextRelease} = context.releaseToAdd;
+    const commits = context.commits;
+
+    context.branch.tags.push({
+      version: nextRelease.version,
+      channel: nextRelease.channel,
+      gitTag: nextRelease.gitTag,
+      gitHead: nextRelease.gitHead,
+    });
+
+    const releases = await plugins.addChannel({...context, commits, lastRelease, currentRelease, nextRelease});
+    context.releases.push(...releases);
+    await plugins.success({...context, lastRelease, commits, nextRelease, releases});
+  }
+
+  const {cwd, env, logger} = context;
 
   context.lastRelease = getLastRelease(context);
   if (context.lastRelease.gitHead) {
@@ -231,16 +259,7 @@ async function runPackage(context, plugins, options, pkg, packages) {
   await plugins.verifyRelease(context);
 
   nextRelease.notes = await plugins.generateNotes(context);
-
-  nextRelease.notes += generateDependencyNotes(pkg, packages);
-  updateVersions(pkg, packages);
-
-  logger.log('Write package %s with data %O', pkg.path, pkg.json);
-  if (!options.dryRun) {
-    await writePkg(pkg.path, pkg.json, {normalize: false});
-  }
-
-  context.nextRelease = nextRelease;
+  await updateNotesAndVersions(context, options, pkg, packages);
 }
 
 async function commitPackage(context, plugins, options) {
@@ -342,7 +361,7 @@ async function getPackages(options, context) {
 function generateDependencyNotes(pkg, packages) {
   let notes = [];
   pkg.dependencies.forEach(name => {
-    if (packages[name].nextRelease.version) {
+    if (packages[name].nextRelease && packages[name].nextRelease.version) {
       notes.push(`* **${name}:** upgraded to ${packages[name].nextRelease.version}`);
     }
   });
@@ -369,7 +388,7 @@ function updateVersions(pkg, packages) {
 
   // Update dependency versions
   pkg.dependencies.forEach(name => {
-    if (packages[name].nextRelease.version) {
+    if (packages[name].nextRelease && packages[name].nextRelease.version) {
       ['devDependencies', 'dependencies'].forEach(key => {
         if (typeof pkg.json[key] !== 'undefined' && typeof pkg.json[key][name] !== 'undefined') {
           pkg.json[key][name] = '^' + packages[name].nextRelease.version;
@@ -379,6 +398,18 @@ function updateVersions(pkg, packages) {
       });
     }
   });
+}
+
+async function updateNotesAndVersions(context, options, pkg, packages) {
+  const {logger} = context;
+
+  pkg.nextRelease.notes += generateDependencyNotes(pkg, packages);
+  updateVersions(pkg, packages);
+
+  logger.log('Write package %s with data %O', pkg.path, pkg.json);
+  if (!options.dryRun) {
+    await writePkg(pkg.path, pkg.json, {normalize: false});
+  }
 }
 
 module.exports = async (cliOptions = {}, {cwd = process.cwd(), env = process.env, stdout, stderr} = {}) => {
