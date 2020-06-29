@@ -66,6 +66,9 @@ async function run(context, plugins) {
     const pkgContext = Object.assign({}, context);
     pkgContext.cwd = pkg.path;
 
+    pkgContext.name = pkg.json.name;
+    pkgContext.logger = logger.scope(logger.scopeName, pkg.json.name);
+
     let pkgOptions = options;
     pkgOptions.path = pkg.path;
     pkgOptions.tagFormat = pkg.json.name + '@${version}';
