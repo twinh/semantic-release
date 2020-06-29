@@ -57,13 +57,13 @@ async function run(context, plugins) {
   // Verify config
   await verify(context);
 
-  const packages = await getPackages(context);
-  if (Object.keys(packages).length === 0) {
+  const pkgs = await getPkgs(context);
+  if (Object.keys(pkgs).length === 0) {
     throw new Error('Cannot find packages');
   }
 
   let contexts = [];
-  for (const pkg of Object.values(packages)) {
+  for (const pkg of Object.values(pkgs)) {
     contexts.push({
       ...context,
       // existing
@@ -75,7 +75,7 @@ async function run(context, plugins) {
       },
       // new
       pkg,
-      packages: packages,
+      pkgs,
       name: pkg.json.name,
     });
   }
@@ -200,7 +200,7 @@ async function runPackage(context, plugins) {
 }
 
 async function newRelease(context, plugins) {
-  const {options, pkg, packages} = context;
+  const {options, pkg, pkgs} = context;
 
   if (context.releaseToAdd) {
     const {lastRelease, currentRelease, nextRelease} = context.releaseToAdd;
@@ -243,7 +243,7 @@ async function newRelease(context, plugins) {
   };
 
   if (!nextRelease.type) {
-    nextRelease.type = generateDependencyRelease(pkg, packages);
+    nextRelease.type = generateDependencyRelease(pkg, pkgs);
   }
 
   // Record for later query
@@ -336,15 +336,15 @@ async function callFail(context, plugins, err) {
   }
 }
 
-async function getPackages(context) {
-  const {options, cwd} = context;
+async function getPkgs(context) {
+  const {cwd, options} = context;
 
-  let packages = {};
+  let pkgs = {};
   for (const pkg of options.packages) {
     const dirs = glob.sync(pkg, {cwd});
     for (const dir of dirs) {
       const json = (await readPkg({cwd: dir, normalize: false})) || {};
-      packages[json.name] = {
+      pkgs[json.name] = {
         path: path.join(cwd, dir),
         json,
         dependencies: []
@@ -354,29 +354,29 @@ async function getPackages(context) {
 
   // TODO support composer.json dependencies
   let graph = [];
-  forEach(packages, (pkg) => {
+  forEach(pkgs, (pkg) => {
     forEach(Object.assign(
       {},
       pkg.json.dependencies || {},
       pkg.json.devDependencies || {}
     ), (version, name) => {
-      graph.push([packages[name], pkg]);
+      graph.push([pkgs[name], pkg]);
 
       pkg.dependencies.push(name)
     });
   });
 
-  packages = toposort(graph);
-  packages = keyBy(packages, 'json.name');
+  pkgs = toposort(graph);
+  pkgs = keyBy(pkgs, 'json.name');
 
-  return packages;
+  return pkgs;
 }
 
-function generateDependencyNotes(pkg, packages) {
+function generateDependencyNotes(pkg, pkgs) {
   let notes = [];
   pkg.dependencies.forEach(name => {
-    if (packages[name].nextRelease && packages[name].nextRelease.version) {
-      notes.push(`* **${name}:** upgraded to ${packages[name].nextRelease.version}`);
+    if (pkgs[name].nextRelease && pkgs[name].nextRelease.version) {
+      notes.push(`* **${name}:** upgraded to ${pkgs[name].nextRelease.version}`);
     }
   });
   if (notes.length) {
@@ -385,10 +385,10 @@ function generateDependencyNotes(pkg, packages) {
   return notes.join('\n');
 }
 
-function generateDependencyRelease(pkg, packages) {
+function generateDependencyRelease(pkg, pkgs) {
   let type;
   pkg.dependencies.forEach(name => {
-    if (packages[name].nextRelease.type) {
+    if (pkgs[name].nextRelease.type) {
       type = 'patch';
       return false;
     }
@@ -396,16 +396,16 @@ function generateDependencyRelease(pkg, packages) {
   return type;
 }
 
-function updateVersions(pkg, packages) {
+function updateVersions(pkg, pkgs) {
   // Update self version
-  pkg.json.version = packages[pkg.json.name].nextRelease.version;
+  pkg.json.version = pkgs[pkg.json.name].nextRelease.version;
 
   // Update dependency versions
   pkg.dependencies.forEach(name => {
-    if (packages[name].nextRelease && packages[name].nextRelease.version) {
+    if (pkgs[name].nextRelease && pkgs[name].nextRelease.version) {
       ['devDependencies', 'dependencies'].forEach(key => {
         if (typeof pkg.json[key] !== 'undefined' && typeof pkg.json[key][name] !== 'undefined') {
-          pkg.json[key][name] = '^' + packages[name].nextRelease.version;
+          pkg.json[key][name] = '^' + pkgs[name].nextRelease.version;
           pkg.changed = true;
           return false;
         }
@@ -415,10 +415,10 @@ function updateVersions(pkg, packages) {
 }
 
 async function updateNotesAndVersions(context) {
-  const {logger, options, pkg, packages} = context;
+  const {logger, options, pkg, pkgs} = context;
 
-  pkg.nextRelease.notes += generateDependencyNotes(pkg, packages);
-  updateVersions(pkg, packages);
+  pkg.nextRelease.notes += generateDependencyNotes(pkg, pkgs);
+  updateVersions(pkg, pkgs);
 
   logger.log('Write package %s with data %O', pkg.path, pkg.json);
   if (!options.dryRun) {
