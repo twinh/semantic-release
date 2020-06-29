@@ -1,4 +1,4 @@
-const {pick, forEach, keyBy, last} = require('lodash');
+const {pick, forEach, keyBy} = require('lodash');
 const marked = require('marked');
 const TerminalRenderer = require('marked-terminal');
 const envCi = require('env-ci');
@@ -63,16 +63,18 @@ async function run(context, plugins) {
   }
 
   for (const pkg of Object.values(packages)) {
+    // TODO 部分复制 context 对象
     const pkgContext = Object.assign({}, context);
     pkgContext.cwd = pkg.path;
 
     pkgContext.name = pkg.json.name;
     pkgContext.logger = logger.scope(logger.scopeName, pkg.json.name);
 
-    let pkgOptions = options;
+    let pkgOptions = Object.assign({}, options);
     pkgOptions.path = pkg.path;
     pkgOptions.tagFormat = pkg.json.name + '@${version}';
 
+    pkgContext.options = pkgOptions;
     pkg.context = pkgContext;
     pkg.options = pkgOptions;
 
