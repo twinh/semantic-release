@@ -57,34 +57,37 @@ async function run(context, plugins) {
   // Verify config
   await verify(context);
 
-  const packages = await getPackages(options, context);
+  const packages = await getPackages(context);
   if (Object.keys(packages).length === 0) {
     throw new Error('Cannot find packages');
   }
 
+  let contexts = [];
   for (const pkg of Object.values(packages)) {
-    // TODO 部分复制 context 对象
-    const pkgContext = Object.assign({}, context);
-    pkgContext.cwd = pkg.path;
+    contexts.push({
+      ...context,
+      // existing
+      cwd: pkg.path,
+      logger: logger.scope(logger.scopeName, pkg.json.name),
+      options: {
+        ...context.options,
+        tagFormat: pkg.json.name + '@${version}'
+      },
+      // new
+      pkg,
+      packages: packages,
+      name: pkg.json.name,
+    });
+  }
 
-    pkgContext.name = pkg.json.name;
-    pkgContext.logger = logger.scope(logger.scopeName, pkg.json.name);
-
-    let pkgOptions = Object.assign({}, options);
-    pkgOptions.path = pkg.path;
-    pkgOptions.tagFormat = pkg.json.name + '@${version}';
-
-    pkgContext.options = pkgOptions;
-    pkg.context = pkgContext;
-    pkg.options = pkgOptions;
-
-    await runPackage(pkgContext, plugins, pkgOptions, pkg, packages);
+  for (const context of contexts) {
+    await runPackage(context, plugins);
   }
 
   // Push "releaseToAdd" one time
   if (!options.dryRun) {
-    for (const pkg of Object.values(packages)) {
-      if (pkg.context.releaseToAdd) {
+    for (const context of contexts) {
+      if (context.releaseToAdd) {
         await push(options.repositoryUrl, {cwd, env});
         await pushNotes(options.repositoryUrl, {cwd, env});
         break;
@@ -92,9 +95,9 @@ async function run(context, plugins) {
     }
   }
 
-  for (const pkg of Object.values(packages)) {
-    await newRelease(pkg.context, plugins, pkg.options, pkg, packages);
-    await commitPackage(pkg.context, plugins, pkg.options);
+  for (const context of contexts) {
+    await newRelease(context, plugins);
+    await commitPackage(context, plugins);
   }
 
   // TODO push when have new release
@@ -106,8 +109,8 @@ async function run(context, plugins) {
   }
 }
 
-async function runPackage(context, plugins, options, pkg, packages) {
-  const {cwd, env, logger} = context;
+async function runPackage(context, plugins) {
+  const {cwd, env, options, logger, pkg} = context;
   const {branch: ciBranch} = context.envCi;
 
   // TODO cache remote call
@@ -164,11 +167,13 @@ async function runPackage(context, plugins, options, pkg, packages) {
     if (context.branch.mergeRange && !semver.satisfies(nextRelease.version, context.branch.mergeRange)) {
       errors.push(getError('EINVALIDMAINTENANCEMERGE', {...context, nextRelease}));
     } else {
-      const commits = await getCommits({...context, lastRelease, nextRelease}, options.path);
+      const commits = await getCommits({...context, lastRelease, nextRelease}, pkg.path);
 
       nextRelease.notes = await plugins.generateNotes({...context, commits, lastRelease, nextRelease});
       pkg.nextRelease = nextRelease;
-      await updateNotesAndVersions(context, options, pkg, packages);
+
+      // TODO releaseToAdd dont need updateNotesAndVersions?
+      await updateNotesAndVersions(context);
 
       if (options.dryRun) {
         logger.warn(`Skip ${nextRelease.gitTag} tag creation in dry-run mode`);
@@ -194,7 +199,9 @@ async function runPackage(context, plugins, options, pkg, packages) {
   }
 }
 
-async function newRelease(context, plugins, options, pkg, packages) {
+async function newRelease(context, plugins) {
+  const {options, pkg, packages} = context;
+
   if (context.releaseToAdd) {
     const {lastRelease, currentRelease, nextRelease} = context.releaseToAdd;
     const commits = context.commits;
@@ -227,7 +234,7 @@ async function newRelease(context, plugins, options, pkg, packages) {
   }
 
   // Filter commits by package path
-  context.commits = await getCommits(context, options.path);
+  context.commits = await getCommits(context, pkg.path);
 
   const nextRelease = {
     type: await plugins.analyzeCommits(context),
@@ -264,11 +271,11 @@ async function newRelease(context, plugins, options, pkg, packages) {
   await plugins.verifyRelease(context);
 
   nextRelease.notes = await plugins.generateNotes(context);
-  await updateNotesAndVersions(context, options, pkg, packages);
+  await updateNotesAndVersions(context);
 }
 
-async function commitPackage(context, plugins, options) {
-  const {cwd, env, logger, nextRelease} = context;
+async function commitPackage(context, plugins) {
+  const {cwd, env, options, logger, nextRelease} = context;
 
   if (!nextRelease) {
     return false;
@@ -329,14 +336,16 @@ async function callFail(context, plugins, err) {
   }
 }
 
-async function getPackages(options, context) {
+async function getPackages(context) {
+  const {options, cwd} = context;
+
   let packages = {};
   for (const pkg of options.packages) {
-    const dirs = glob.sync(pkg, {cwd: context.cwd});
+    const dirs = glob.sync(pkg, {cwd});
     for (const dir of dirs) {
       const json = (await readPkg({cwd: dir, normalize: false})) || {};
       packages[json.name] = {
-        path: path.join(context.cwd, dir),
+        path: path.join(cwd, dir),
         json,
         dependencies: []
       };
@@ -405,8 +414,8 @@ function updateVersions(pkg, packages) {
   });
 }
 
-async function updateNotesAndVersions(context, options, pkg, packages) {
-  const {logger} = context;
+async function updateNotesAndVersions(context) {
+  const {logger, options, pkg, packages} = context;
 
   pkg.nextRelease.notes += generateDependencyNotes(pkg, packages);
   updateVersions(pkg, packages);
