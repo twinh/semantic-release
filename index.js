@@ -367,16 +367,21 @@ async function run(context, plugins) {
     });
   }
 
-  await runSteps(defaultContext, contexts, plugins, steps);
+  return await runSteps(defaultContext, contexts, plugins, steps);
 }
 
 async function runSteps(defaultContext, contexts, plugins, steps) {
+  const results = [];
+
   for (const name of Object.keys(steps)) {
     const step = steps[name];
 
     if (step.process) {
       for (const context of contexts) {
-        await step.process(context, plugins);
+        const result = await step.process(context, plugins);
+        if (name === 'success') {
+          results.push(result);
+        }
       }
     }
 
@@ -393,6 +398,8 @@ async function runSteps(defaultContext, contexts, plugins, steps) {
       await plugins[name + 'All']({...defaultContext, pkgContexts: contexts});
     }
   }
+
+  return results;
 }
 
 function logErrors({logger, stderr}, err) {
