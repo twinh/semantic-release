@@ -276,6 +276,7 @@ const steps = {
       }
 
       const releases = await plugins.publish(context);
+      context.newReleases = releases;
       context.releases.push(...releases);
     },
     preprocessAll: async (context) => {
@@ -295,7 +296,7 @@ const steps = {
         return false;
       }
 
-      await plugins.success({...context, releases});
+      await plugins.success({...context, releases: context.newReleases});
 
       logger.success(
         `Published release ${nextRelease.version} on ${nextRelease.channel ? nextRelease.channel : 'default'} channel`
