@@ -316,8 +316,10 @@ const steps = {
 
 /* eslint complexity: off */
 async function run(context, plugins) {
-  const {cwd, env, options, logger} = context;
+  const {env, options, logger} = context;
   const {isCi, isPr} = context.envCi;
+
+  logger.log('Running in', !options.monorepo ? 'monorepo' : 'single repository', 'mode.');
 
   if (!isCi && !options.dryRun && !options.noCi) {
     logger.warn('This run was not triggered in a known CI environment, running in dry-run mode.');
@@ -357,8 +359,8 @@ async function run(context, plugins) {
       cwd: pkg.path,
       logger: logger.scope(logger.scopeName, pkg.json.name),
       options: {
-        ...context.options,
-        tagFormat: pkg.json.name + '@${version}'
+        ...options,
+        tagFormat: options.tagFormat.replace('${name}', pkg.json.name),
       },
       // new
       pkg,
