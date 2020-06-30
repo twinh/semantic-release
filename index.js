@@ -428,9 +428,10 @@ async function callFail(context, plugins, err) {
 }
 
 async function getPkgs(context) {
-  const {cwd, options} = context;
+  const {cwd, options, logger} = context;
 
   let pkgs = {};
+  logger.log('Find packages in directories: %s', options.packages.join(', '));
   for (const pkg of options.packages) {
     const dirs = glob.sync(pkg, {cwd});
     for (const dir of dirs) {
@@ -442,6 +443,7 @@ async function getPkgs(context) {
       };
     }
   }
+  logger.success('Found %d packages: %s', Object.keys(pkgs).length, Object.keys(pkgs).join(', '));
 
   // TODO support composer.json dependencies
   let graph = [];
@@ -451,14 +453,15 @@ async function getPkgs(context) {
       pkg.json.dependencies || {},
       pkg.json.devDependencies || {}
     ), (version, name) => {
-      graph.push([pkgs[name], pkg]);
-
-      pkg.dependencies.push(name)
+      if (pkgs[name]) {
+        graph.push([pkgs[name], pkg]);
+        pkg.dependencies.push(name)
+      }
     });
   });
-
-  pkgs = toposort(graph);
-  pkgs = keyBy(pkgs, 'json.name');
+  if (graph.length) {
+    pkgs = keyBy(toposort(graph), 'json.name');
+  }
 
   return pkgs;
 }
