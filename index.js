@@ -1,4 +1,4 @@
-const {pick, forEach, keyBy} = require('lodash');
+const {pick, forEach, keyBy, isFunction} = require('lodash');
 const marked = require('marked');
 const TerminalRenderer = require('marked-terminal');
 const envCi = require('env-ci');
@@ -27,6 +27,291 @@ const writePkg = require('write-pkg');
 const path = require('path');
 
 marked.setOptions({renderer: new TerminalRenderer()});
+
+const steps = {
+  verifyConditions: {
+    process: async (context, plugins) => {
+      const {cwd, env, options, logger} = context;
+      const {branch: ciBranch} = context.envCi;
+
+      // TODO cache remote call
+      options.repositoryUrl = await getGitAuthUrl({...context, branch: {name: ciBranch}});
+      context.branches = await getBranches(options.repositoryUrl, ciBranch, context);
+      context.branch = context.branches.find(({name}) => name === ciBranch);
+
+      if (!context.branch) {
+        logger.log(
+          `This test run was triggered on the branch ${ciBranch}, while semantic-release is configured to only publish from ${context.branches
+            .map(({name}) => name)
+            .join(', ')}, therefore a new version won’t be published.`
+        );
+        return false;
+      }
+
+      logger[options.dryRun ? 'warn' : 'success'](
+        `Run automated release from branch ${ciBranch} on repository ${options.repositoryUrl}${
+          options.dryRun ? ' in dry-run mode' : ''
+        }`
+      );
+
+      try {
+        try {
+          await verifyAuth(options.repositoryUrl, context.branch.name, {cwd, env});
+        } catch (error) {
+          if (!(await isBranchUpToDate(options.repositoryUrl, context.branch.name, {cwd, env}))) {
+            logger.log(
+              `The local branch ${context.branch.name} is behind the remote one, therefore a new version won't be published.`
+            );
+            return false;
+          }
+
+          throw error;
+        }
+      } catch (error) {
+        logger.error(`The command "${error.command}" failed with the error message ${error.stderr}.`);
+        throw getError('EGITNOPERMISSION', context);
+      }
+
+      logger.success(`Allowed to push to the Git repository`);
+
+      await plugins.verifyConditions(context);
+    }
+  },
+  releaseToAddGenerateNotes: {
+    process: async (context, plugins) => {
+      const {cwd, env, options, logger, pkg} = context;
+
+      const errors = [];
+      context.releases = [];
+      const releaseToAdd = getReleaseToAdd(context);
+
+      if (releaseToAdd) {
+        const {lastRelease, currentRelease, nextRelease} = releaseToAdd;
+
+        nextRelease.gitHead = await getTagHead(nextRelease.gitHead, {cwd, env});
+        currentRelease.gitHead = await getTagHead(currentRelease.gitHead, {cwd, env});
+        if (context.branch.mergeRange && !semver.satisfies(nextRelease.version, context.branch.mergeRange)) {
+          errors.push(getError('EINVALIDMAINTENANCEMERGE', {...context, nextRelease}));
+        } else {
+          const commits = await getCommits({...context, lastRelease, nextRelease}, pkg.path);
+
+          nextRelease.notes = await plugins.generateNotes({...context, commits, lastRelease, nextRelease});
+          pkg.nextRelease = nextRelease;
+
+          // TODO releaseToAdd dont need updateNotesAndVersions?
+          await updateNotesAndVersions(context);
+
+          if (options.dryRun) {
+            logger.warn(`Skip ${nextRelease.gitTag} tag creation in dry-run mode`);
+          } else {
+            await addNote({channels: [...currentRelease.channels, nextRelease.channel]}, nextRelease.gitHead, {
+              cwd,
+              env
+            });
+
+            logger.success(
+              `Add ${nextRelease.channel ? `channel ${nextRelease.channel}` : 'default channel'} to tag ${
+                nextRelease.gitTag
+              }`
+            );
+          }
+
+          // Record for next step
+          context.commits = commits;
+          context.releaseToAdd = releaseToAdd;
+          return;
+        }
+      }
+
+      if (errors.length > 0) {
+        throw new AggregateError(errors);
+      }
+    },
+    processAll: async (context, contexts) => {
+      const {options} = context;
+
+      // Push "releaseToAdd" one time
+      for (const context of contexts) {
+        if (context.releaseToAdd) {
+          // await plugins.generateNotesAll();
+          if (!options.dryRun) {
+            await push(options.repositoryUrl, {cwd, env});
+            await pushNotes(options.repositoryUrl, {cwd, env});
+            break;
+          }
+        }
+      }
+    }
+  },
+  addChannel: {
+    process: async (context, plugins) => {
+      if (context.releaseToAdd) {
+        const {lastRelease, currentRelease, nextRelease} = context.releaseToAdd;
+        const commits = context.commits;
+
+        context.branch.tags.push({
+          version: nextRelease.version,
+          channel: nextRelease.channel,
+          gitTag: nextRelease.gitTag,
+          gitHead: nextRelease.gitHead,
+        });
+
+        const releases = await plugins.addChannel({...context, commits, lastRelease, currentRelease, nextRelease});
+        context.releases.push(...releases);
+
+        // Record for next step
+        context.newReleases = releases;
+      }
+    }
+  },
+  addChannelSuccess: {
+    process: async (context, plugins) => {
+      if (!context.releaseToAdd) {
+        return;
+      }
+
+      const commits = context.commits;
+      const {lastRelease, nextRelease} = context.releaseToAdd;
+      const releases = context.newReleases;
+      await plugins.success({...context, lastRelease, commits, nextRelease, releases});
+    },
+    processAll: false,
+  },
+  analyzeCommits: {
+    process: async (context, plugins) => {
+      const {cwd, env, logger, pkg} = context;
+
+      context.lastRelease = getLastRelease(context);
+      if (context.lastRelease.gitHead) {
+        context.lastRelease.gitHead = await getTagHead(context.lastRelease.gitHead, {cwd, env});
+      }
+
+      if (context.lastRelease.gitTag) {
+        logger.log(
+          `Found git tag ${context.lastRelease.gitTag} associated with version ${context.lastRelease.version} on branch ${context.branch.name}`
+        );
+      } else {
+        logger.log(`No git tag version found on branch ${context.branch.name}`);
+      }
+
+      // Filter commits by package path
+      context.commits = await getCommits(context, pkg.path);
+      context.nextReleaseType = await plugins.analyzeCommits(context);
+    }
+  },
+  verifyRelease: {
+    process: async (context, plugins) => {
+      const {cwd, env, logger, options, pkg, pkgs} = context;
+
+      const nextRelease = {
+        type: context.nextReleaseType,
+        channel: context.branch.channel || null,
+        gitHead: await getGitHead({cwd, env}),
+      };
+
+      if (!nextRelease.type) {
+        nextRelease.type = generateDependencyRelease(pkg, pkgs);
+      }
+
+      // Record for later query
+      pkg.nextRelease = nextRelease;
+
+      if (!nextRelease.type) {
+        logger.log('There are no relevant changes, so no new version is released.');
+        return context.releases.length > 0 ? {releases: context.releases} : false;
+      }
+
+      context.nextRelease = nextRelease;
+      nextRelease.version = getNextVersion(context);
+      nextRelease.gitTag = makeTag(options.tagFormat, nextRelease.version);
+      nextRelease.name = nextRelease.gitTag;
+
+      if (context.branch.type !== 'prerelease' && !semver.satisfies(nextRelease.version, context.branch.range)) {
+        throw getError('EINVALIDNEXTVERSION', {
+          ...context,
+          validBranches: context.branches.filter(
+            ({type, accept}) => type !== 'prerelease' && accept.includes(nextRelease.type)
+          ),
+        });
+      }
+
+      await plugins.verifyRelease(context);
+    }
+  },
+  generateNotes: {
+    process: async (context, plugins) => {
+      const {nextRelease} = context;
+      if (!nextRelease) {
+        return false;
+      }
+
+      nextRelease.notes = await plugins.generateNotes(context);
+      await updateNotesAndVersions(context);
+    }
+  },
+  prepare: {
+    process: async (context, plugins) => {
+      const {nextRelease} = context;
+      if (!nextRelease) {
+        return false;
+      }
+
+      await plugins.prepare(context);
+    }
+  },
+  publish: {
+    process: async (context, plugins) => {
+      const {cwd, env, options, logger, nextRelease} = context;
+      if (!nextRelease) {
+        return false;
+      }
+
+      if (options.dryRun) {
+        logger.warn(`Skip ${nextRelease.gitTag} tag creation in dry-run mode`);
+      } else {
+        // Create the tag before calling the publish plugins as some require the tag to exists
+        await tag(nextRelease.gitTag, nextRelease.gitHead, {cwd, env});
+        await addNote({channels: [nextRelease.channel]}, nextRelease.gitHead, {cwd, env});
+        logger.success(`Created tag ${nextRelease.gitTag}`);
+      }
+
+      const releases = await plugins.publish(context);
+      context.releases.push(...releases);
+    },
+    preprocessAll: async (context) => {
+      const {options, logger} = context;
+
+      if (!options.dryRun) {
+        await push(options.repositoryUrl, {cwd, env});
+        await pushNotes(options.repositoryUrl, {cwd, env});
+        logger.success(`Push to ${options.repositoryUrl}`);
+      }
+    }
+  },
+  success: {
+    process: async (context, plugins) => {
+      const {options, logger, nextRelease} = context;
+      if (!nextRelease) {
+        return false;
+      }
+
+      await plugins.success({...context, releases});
+
+      logger.success(
+        `Published release ${nextRelease.version} on ${nextRelease.channel ? nextRelease.channel : 'default'} channel`
+      );
+
+      if (options.dryRun) {
+        logger.log(`Release note for version ${nextRelease.version}:`);
+        if (nextRelease.notes) {
+          context.stdout.write(marked(nextRelease.notes));
+        }
+      }
+
+      return pick(context, ['lastRelease', 'commits', 'nextRelease', 'releases']);
+    }
+  }
+};
 
 /* eslint complexity: off */
 async function run(context, plugins) {
@@ -62,6 +347,7 @@ async function run(context, plugins) {
     throw new Error('Cannot find packages');
   }
 
+  const defaultContext = context;
   let contexts = [];
   for (const pkg of Object.values(pkgs)) {
     contexts.push({
@@ -80,235 +366,32 @@ async function run(context, plugins) {
     });
   }
 
-  for (const context of contexts) {
-    await runPackage(context, plugins);
-  }
-
-  // Push "releaseToAdd" one time
-  if (!options.dryRun) {
-    for (const context of contexts) {
-      if (context.releaseToAdd) {
-        await push(options.repositoryUrl, {cwd, env});
-        await pushNotes(options.repositoryUrl, {cwd, env});
-        break;
-      }
-    }
-  }
-
-  for (const context of contexts) {
-    await newRelease(context, plugins);
-    await commitPackage(context, plugins);
-  }
-
-  // TODO push when have new release
-  // Only Push one time
-  if (!options.dryRun) {
-    await push(options.repositoryUrl, {cwd, env});
-    await pushNotes(options.repositoryUrl, {cwd, env});
-    logger.success(`Push to ${options.repositoryUrl}`);
-  }
+  await runSteps(defaultContext, contexts, plugins, steps);
 }
 
-async function runPackage(context, plugins) {
-  const {cwd, env, options, logger, pkg} = context;
-  const {branch: ciBranch} = context.envCi;
+async function runSteps(defaultContext, contexts, plugins, steps) {
+  for (const name of Object.keys(steps)) {
+    const step = steps[name];
 
-  // TODO cache remote call
-  options.repositoryUrl = await getGitAuthUrl({...context, branch: {name: ciBranch}});
-  context.branches = await getBranches(options.repositoryUrl, ciBranch, context);
-  context.branch = context.branches.find(({name}) => name === ciBranch);
-
-  if (!context.branch) {
-    logger.log(
-      `This test run was triggered on the branch ${ciBranch}, while semantic-release is configured to only publish from ${context.branches
-        .map(({name}) => name)
-        .join(', ')}, therefore a new version won’t be published.`
-    );
-    return false;
-  }
-
-  logger[options.dryRun ? 'warn' : 'success'](
-    `Run automated release from branch ${ciBranch} on repository ${options.repositoryUrl}${
-      options.dryRun ? ' in dry-run mode' : ''
-    }`
-  );
-
-  try {
-    try {
-      await verifyAuth(options.repositoryUrl, context.branch.name, {cwd, env});
-    } catch (error) {
-      if (!(await isBranchUpToDate(options.repositoryUrl, context.branch.name, {cwd, env}))) {
-        logger.log(
-          `The local branch ${context.branch.name} is behind the remote one, therefore a new version won't be published.`
-        );
-        return false;
+    if (step.process) {
+      for (const context of contexts) {
+        await step.process(context, plugins);
       }
-
-      throw error;
     }
-  } catch (error) {
-    logger.error(`The command "${error.command}" failed with the error message ${error.stderr}.`);
-    throw getError('EGITNOPERMISSION', context);
-  }
 
-  logger.success(`Allowed to push to the Git repository`);
+    if (step.preprocessAll) {
+      await step.preprocessAll(defaultContext, contexts);
+    }
 
-  await plugins.verifyConditions(context);
-
-  const errors = [];
-  context.releases = [];
-  const releaseToAdd = getReleaseToAdd(context);
-
-  if (releaseToAdd) {
-    const {lastRelease, currentRelease, nextRelease} = releaseToAdd;
-
-    nextRelease.gitHead = await getTagHead(nextRelease.gitHead, {cwd, env});
-    currentRelease.gitHead = await getTagHead(currentRelease.gitHead, {cwd, env});
-    if (context.branch.mergeRange && !semver.satisfies(nextRelease.version, context.branch.mergeRange)) {
-      errors.push(getError('EINVALIDMAINTENANCEMERGE', {...context, nextRelease}));
+    if (step.processAll === false) {
+      continue;
+    }
+    if (step.processAll) {
+      await step.processAll(defaultContext, contexts);
     } else {
-      const commits = await getCommits({...context, lastRelease, nextRelease}, pkg.path);
-
-      nextRelease.notes = await plugins.generateNotes({...context, commits, lastRelease, nextRelease});
-      pkg.nextRelease = nextRelease;
-
-      // TODO releaseToAdd dont need updateNotesAndVersions?
-      await updateNotesAndVersions(context);
-
-      if (options.dryRun) {
-        logger.warn(`Skip ${nextRelease.gitTag} tag creation in dry-run mode`);
-      } else {
-        await addNote({channels: [...currentRelease.channels, nextRelease.channel]}, nextRelease.gitHead, {cwd, env});
-
-        logger.success(
-          `Add ${nextRelease.channel ? `channel ${nextRelease.channel}` : 'default channel'} to tag ${
-            nextRelease.gitTag
-          }`
-        );
-      }
-
-      // Record for next step
-      context.commits = commits;
-      context.releaseToAdd = releaseToAdd;
-      return;
+      await plugins[name + 'All']({...defaultContext, pkgContexts: contexts});
     }
   }
-
-  if (errors.length > 0) {
-    throw new AggregateError(errors);
-  }
-}
-
-async function newRelease(context, plugins) {
-  const {options, pkg, pkgs} = context;
-
-  if (context.releaseToAdd) {
-    const {lastRelease, currentRelease, nextRelease} = context.releaseToAdd;
-    const commits = context.commits;
-
-    context.branch.tags.push({
-      version: nextRelease.version,
-      channel: nextRelease.channel,
-      gitTag: nextRelease.gitTag,
-      gitHead: nextRelease.gitHead,
-    });
-
-    const releases = await plugins.addChannel({...context, commits, lastRelease, currentRelease, nextRelease});
-    context.releases.push(...releases);
-    await plugins.success({...context, lastRelease, commits, nextRelease, releases});
-  }
-
-  const {cwd, env, logger} = context;
-
-  context.lastRelease = getLastRelease(context);
-  if (context.lastRelease.gitHead) {
-    context.lastRelease.gitHead = await getTagHead(context.lastRelease.gitHead, {cwd, env});
-  }
-
-  if (context.lastRelease.gitTag) {
-    logger.log(
-      `Found git tag ${context.lastRelease.gitTag} associated with version ${context.lastRelease.version} on branch ${context.branch.name}`
-    );
-  } else {
-    logger.log(`No git tag version found on branch ${context.branch.name}`);
-  }
-
-  // Filter commits by package path
-  context.commits = await getCommits(context, pkg.path);
-
-  const nextRelease = {
-    type: await plugins.analyzeCommits(context),
-    channel: context.branch.channel || null,
-    gitHead: await getGitHead({cwd, env}),
-  };
-
-  if (!nextRelease.type) {
-    nextRelease.type = generateDependencyRelease(pkg, pkgs);
-  }
-
-  // Record for later query
-  pkg.nextRelease = nextRelease;
-
-  if (!nextRelease.type) {
-    logger.log('There are no relevant changes, so no new version is released.');
-    return context.releases.length > 0 ? {releases: context.releases} : false;
-  }
-
-  context.nextRelease = nextRelease;
-  nextRelease.version = getNextVersion(context);
-  nextRelease.gitTag = makeTag(options.tagFormat, nextRelease.version);
-  nextRelease.name = nextRelease.gitTag;
-
-  if (context.branch.type !== 'prerelease' && !semver.satisfies(nextRelease.version, context.branch.range)) {
-    throw getError('EINVALIDNEXTVERSION', {
-      ...context,
-      validBranches: context.branches.filter(
-        ({type, accept}) => type !== 'prerelease' && accept.includes(nextRelease.type)
-      ),
-    });
-  }
-
-  await plugins.verifyRelease(context);
-
-  nextRelease.notes = await plugins.generateNotes(context);
-  await updateNotesAndVersions(context);
-}
-
-async function commitPackage(context, plugins) {
-  const {cwd, env, options, logger, nextRelease} = context;
-
-  if (!nextRelease) {
-    return false;
-  }
-
-  await plugins.prepare(context);
-
-  if (options.dryRun) {
-    logger.warn(`Skip ${nextRelease.gitTag} tag creation in dry-run mode`);
-  } else {
-    // Create the tag before calling the publish plugins as some require the tag to exists
-    await tag(nextRelease.gitTag, nextRelease.gitHead, {cwd, env});
-    await addNote({channels: [nextRelease.channel]}, nextRelease.gitHead, {cwd, env});
-    logger.success(`Created tag ${nextRelease.gitTag}`);
-  }
-
-  const releases = await plugins.publish(context);
-  context.releases.push(...releases);
-
-  await plugins.success({...context, releases});
-
-  logger.success(
-    `Published release ${nextRelease.version} on ${nextRelease.channel ? nextRelease.channel : 'default'} channel`
-  );
-
-  if (options.dryRun) {
-    logger.log(`Release note for version ${nextRelease.version}:`);
-    if (nextRelease.notes) {
-      context.stdout.write(marked(nextRelease.notes));
-    }
-  }
-
-  return pick(context, ['lastRelease', 'commits', 'nextRelease', 'releases']);
 }
 
 function logErrors({logger, stderr}, err) {
