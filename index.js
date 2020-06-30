@@ -319,7 +319,7 @@ async function run(context, plugins) {
   const {env, options, logger} = context;
   const {isCi, isPr} = context.envCi;
 
-  logger.log('Running in', !options.monorepo ? 'monorepo' : 'single repository', 'mode.');
+  logger.log('Running in', options.monorepo ? 'monorepo' : 'single repository', 'mode.');
 
   if (!isCi && !options.dryRun && !options.noCi) {
     logger.warn('This run was not triggered in a known CI environment, running in dry-run mode.');
