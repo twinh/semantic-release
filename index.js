@@ -25,17 +25,40 @@ const readPkg = require('read-pkg');
 const toposort = require('toposort');
 const writePkg = require('write-pkg');
 const path = require('path');
+const mem = require('mem');
+const debug = require('debug')('semantic-release:d');
 
 marked.setOptions({renderer: new TerminalRenderer()});
+
+// Simply cache remote call by repositoryUrl
+const verifyPush = mem(async (repositoryUrl, context) => {
+  const {cwd, env, logger} = context;
+
+  try {
+    try {
+      await verifyAuth(repositoryUrl, context.branch.name, {cwd, env});
+    } catch (error) {
+      if (!(await isBranchUpToDate(repositoryUrl, context.branch.name, {cwd, env}))) {
+        logger.log(
+          `The local branch ${context.branch.name} is behind the remote one, therefore a new version won't be published.`
+        );
+        return false;
+      }
+
+      throw error;
+    }
+  } catch (error) {
+    logger.error(`The command "${error.command}" failed with the error message ${error.stderr}.`);
+    throw getError('EGITNOPERMISSION', context);
+  }
+});
 
 const steps = {
   verifyConditions: {
     process: async (context, plugins) => {
-      const {cwd, env, options, logger} = context;
+      const {options, logger} = context;
       const {branch: ciBranch} = context.envCi;
 
-      // TODO cache remote call
-      options.repositoryUrl = await getGitAuthUrl({...context, branch: {name: ciBranch}});
       context.branches = await getBranches(options.repositoryUrl, ciBranch, context);
       context.branch = context.branches.find(({name}) => name === ciBranch);
 
@@ -54,25 +77,9 @@ const steps = {
         }`
       );
 
-      try {
-        try {
-          await verifyAuth(options.repositoryUrl, context.branch.name, {cwd, env});
-        } catch (error) {
-          if (!(await isBranchUpToDate(options.repositoryUrl, context.branch.name, {cwd, env}))) {
-            logger.log(
-              `The local branch ${context.branch.name} is behind the remote one, therefore a new version won't be published.`
-            );
-            return false;
-          }
-
-          throw error;
-        }
-      } catch (error) {
-        logger.error(`The command "${error.command}" failed with the error message ${error.stderr}.`);
-        throw getError('EGITNOPERMISSION', context);
-      }
-
-      logger.success(`Allowed to push to the Git repository`);
+      debug('Start verify push');
+      await verifyPush(options.repositoryUrl, context);
+      debug('End verify push');
 
       await plugins.verifyConditions(context);
     }
@@ -317,7 +324,8 @@ const steps = {
 /* eslint complexity: off */
 async function run(context, plugins) {
   const {env, options, logger} = context;
-  const {isCi, isPr} = context.envCi;
+  const {isCi, branch, prBranch, isPr} = context.envCi;
+  const ciBranch = isPr ? prBranch : branch;
 
   logger.log('Running in', options.monorepo ? 'monorepo' : 'single repository', 'mode.');
 
@@ -344,6 +352,8 @@ async function run(context, plugins) {
 
   // Verify config
   await verify(context);
+
+  options.repositoryUrl = await getGitAuthUrl({...context, branch: {name: ciBranch}});
 
   const pkgs = await getPkgs(context);
   if (Object.keys(pkgs).length === 0) {

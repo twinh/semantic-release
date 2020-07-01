@@ -40,6 +40,7 @@
     "lodash": "^4.17.15",
     "marked": "^1.0.0",
     "marked-terminal": "^4.0.0",
+    "mem": "^6.1.0",
     "micromatch": "^4.0.2",
     "p-each-series": "^2.1.0",
     "p-reduce": "^2.0.0",
