@@ -78,8 +78,11 @@ const steps = {
       );
 
       debug('Start verify push');
-      await verifyPush(options.repositoryUrl, context);
+      const result = await verifyPush(options.repositoryUrl, context);
       debug('End verify push');
+      if (result === false) {
+        return result;
+      }
 
       await plugins.verifyConditions(context);
     }
@@ -383,35 +386,42 @@ async function run(context, plugins) {
 }
 
 async function runSteps(defaultContext, contexts, plugins, steps) {
+  let result;
   const results = [];
 
-  for (const name of Object.keys(steps)) {
-    const step = steps[name];
+  steps:
+    for (const name of Object.keys(steps)) {
+      const step = steps[name];
 
-    if (step.process) {
-      for (const context of contexts) {
-        const result = await step.process(context, plugins);
-        if (name === 'success') {
-          results.push(result);
+      if (step.process) {
+        for (const context of contexts) {
+          result = await step.process(context, plugins);
+          if (result === false) {
+            break steps;
+          }
+
+          // Record last step results
+          if (name === 'success') {
+            results.push(result);
+          }
         }
+      }
+
+      if (step.preprocessAll) {
+        await step.preprocessAll(defaultContext, contexts);
+      }
+
+      if (step.processAll === false) {
+        continue;
+      }
+      if (step.processAll) {
+        await step.processAll(defaultContext, contexts);
+      } else {
+        await plugins[name + 'All']({...defaultContext, pkgContexts: contexts});
       }
     }
 
-    if (step.preprocessAll) {
-      await step.preprocessAll(defaultContext, contexts);
-    }
-
-    if (step.processAll === false) {
-      continue;
-    }
-    if (step.processAll) {
-      await step.processAll(defaultContext, contexts);
-    } else {
-      await plugins[name + 'All']({...defaultContext, pkgContexts: contexts});
-    }
-  }
-
-  return results;
+  return result === false ? false : results;
 }
 
 function logErrors({logger, stderr}, err) {
