@@ -26,7 +26,7 @@ const toposort = require('toposort');
 const writePkg = require('write-pkg');
 const path = require('path');
 const mem = require('mem');
-const debug = require('debug')('semantic-release:d');
+const debug = require('debug')('semantic-release:index');
 
 marked.setOptions({renderer: new TerminalRenderer()});
 
@@ -228,7 +228,7 @@ const steps = {
 
       if (!nextRelease.type) {
         logger.log('There are no relevant changes, so no new version is released.');
-        return context.releases.length > 0 ? {releases: context.releases} : false;
+        return context.releases.length > 0 ? {releases: context.releases} : null;
       }
 
       context.nextRelease = nextRelease;
@@ -252,7 +252,7 @@ const steps = {
     process: async (context, plugins) => {
       const {nextRelease} = context;
       if (!nextRelease) {
-        return false;
+        return;
       }
 
       nextRelease.notes = await plugins.generateNotes(context);
@@ -263,7 +263,7 @@ const steps = {
     process: async (context, plugins) => {
       const {nextRelease} = context;
       if (!nextRelease) {
-        return false;
+        return;
       }
 
       await plugins.prepare(context);
@@ -273,7 +273,7 @@ const steps = {
     process: async (context, plugins) => {
       const {cwd, env, options, logger, nextRelease} = context;
       if (!nextRelease) {
-        return false;
+        return;
       }
 
       if (options.dryRun) {
@@ -290,7 +290,7 @@ const steps = {
       context.releases.push(...releases);
     },
     preprocessAll: async (context) => {
-      const {options, logger} = context;
+      const {cwd, env, options, logger} = context;
 
       if (!options.dryRun) {
         await push(options.repositoryUrl, {cwd, env});
@@ -303,7 +303,7 @@ const steps = {
     process: async (context, plugins) => {
       const {options, logger, nextRelease} = context;
       if (!nextRelease) {
-        return false;
+        return;
       }
 
       await plugins.success({...context, releases: context.newReleases});
@@ -400,8 +400,8 @@ async function runSteps(defaultContext, contexts, plugins, steps) {
             break steps;
           }
 
-          // Record last step results
-          if (name === 'success') {
+          // Record release results
+          if (result !== null && ['verifyRelease', 'success'].includes(name)) {
             results.push(result);
           }
         }
