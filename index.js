@@ -138,7 +138,7 @@ const steps = {
       }
     },
     processAll: async (context, contexts) => {
-      const {options} = context;
+      const {cwd, env, options} = context;
 
       // Push "releaseToAdd" one time
       for (const context of contexts) {
