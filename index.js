@@ -21,12 +21,13 @@ const {verifyAuth, isBranchUpToDate, getGitHead, tag, push, pushNotes, getTagHea
 const getError = require('./lib/get-error');
 const {COMMIT_NAME, COMMIT_EMAIL} = require('./lib/definitions/constants');
 const glob = require('glob');
-const readPkg = require('read-pkg');
 const toposort = require('toposort');
 const writePkg = require('write-pkg');
 const path = require('path');
 const mem = require('mem');
+const fs = require('fs');
 const debug = require('debug')('semantic-release:index');
+const stringifyPackage = require('stringify-package');
 
 marked.setOptions({renderer: new TerminalRenderer()});
 
@@ -370,15 +371,15 @@ async function run(context, plugins) {
       ...context,
       // existing
       cwd: pkg.path,
-      logger: logger.scope(logger.scopeName, pkg.json.name),
+      logger: logger.scope(logger.scopeName, pkg.name),
       options: {
         ...options,
-        tagFormat: options.tagFormat.replace('${name}', pkg.json.name),
+        tagFormat: options.tagFormat.replace('${name}', pkg.name),
       },
       // new
       pkg,
       pkgs,
-      name: pkg.json.name,
+      name: pkg.name,
     });
   }
 
@@ -449,40 +450,106 @@ async function callFail(context, plugins, err) {
   }
 }
 
+const packageConfigs = {
+  'package.json': {
+    keys: [
+      'dependencies',
+      'devDependencies',
+      'peerDependencies',
+      'optionalDependencies',
+    ],
+  },
+  'composer.json': {
+    keys: [
+      'require',
+      'require-dev',
+    ],
+  }
+};
+
+function unifyPkgName(name) {
+  if (name.includes('/') && name.substr(0, 1) !== '@') {
+    return '@' + name;
+  }
+  return name;
+}
+
+function normalizePkgName(name, file) {
+  if (file !== 'composer.json') {
+    return name;
+  }
+  if (name.substr(0, 1) === '@') {
+    return name.substr(1);
+  }
+  return name;
+}
+
 async function getPkgs(context) {
   const {cwd, options, logger} = context;
 
   let pkgs = {};
   logger.log('Find packages in directories: %s', options.packages.join(', '));
+
   for (const pkg of options.packages) {
     const dirs = glob.sync(pkg, {cwd});
+
     for (const dir of dirs) {
-      const json = (await readPkg({cwd: dir, normalize: false})) || {};
-      pkgs[json.name] = {
-        path: path.join(cwd, dir),
-        json,
-        dependencies: []
-      };
+      for (const fileName of Object.keys(packageConfigs)) {
+        if (!fs.existsSync(path.join(cwd, dir, fileName))) {
+          continue;
+        }
+
+        const content = JSON.parse(fs.readFileSync(path.join(cwd, dir, fileName)));
+        // TODO check all package name is same
+        const pkgName = unifyPkgName(content.name);
+
+        if (!pkgs[pkgName]) {
+          pkgs[pkgName] = {
+            name: pkgName,
+            path: path.join(cwd, dir),
+            dependencies: [],
+            pkgFiles: {}
+          }
+        }
+
+        // TODO indent, newline
+        pkgs[pkgName].pkgFiles[fileName] = content;
+      }
     }
   }
+
   logger.success('Found %d packages: %s', Object.keys(pkgs).length, Object.keys(pkgs).join(', '));
 
-  // TODO support composer.json dependencies
   let graph = [];
   forEach(pkgs, (pkg) => {
-    forEach(Object.assign(
-      {},
-      pkg.json.dependencies || {},
-      pkg.json.devDependencies || {}
-    ), (version, name) => {
-      if (pkgs[name]) {
-        graph.push([pkgs[name], pkg]);
-        pkg.dependencies.push(name)
+    forEach(packageConfigs, (config, file) => {
+      if (!pkg.pkgFiles[file]) {
+        return;
       }
+
+      const pkgFile = pkg.pkgFiles[file];
+      config.keys.forEach(key => {
+        if (!pkgFile[key]) {
+          return;
+        }
+
+        forEach(pkgFile[key], (version, name) => {
+          name = unifyPkgName(name);
+
+          if (!pkgs[name]) {
+            return;
+          }
+
+          name = unifyPkgName(name);
+          graph.push([pkgs[name], pkg]);
+          pkg.dependencies.push({file, key, name});
+        });
+      });
     });
   });
+
   if (graph.length) {
-    pkgs = keyBy(toposort(graph), 'json.name');
+    pkgs = keyBy(toposort(graph), 'name');
   }
 
   return pkgs;
@@ -490,7 +557,7 @@ async function getPkgs(context) {
 
 function generateDependencyNotes(pkg, pkgs) {
   let notes = [];
-  pkg.dependencies.forEach(name => {
+  pkg.dependencies.forEach(({name}) => {
     if (pkgs[name].nextRelease && pkgs[name].nextRelease.version) {
       notes.push(`* **${name}:** upgraded to ${pkgs[name].nextRelease.version}`);
     }
@@ -503,7 +570,8 @@ function generateDependencyNotes(pkg, pkgs) {
 
 function generateDependencyRelease(pkg, pkgs) {
   let type;
-  pkg.dependencies.forEach(name => {
+
+  pkg.dependencies.forEach(({name}) => {
     if (pkgs[name].nextRelease.type) {
       type = 'patch';
       return false;
@@ -513,32 +581,33 @@ function generateDependencyRelease(pkg, pkgs) {
 }
 
 function updateVersions(pkg, pkgs) {
-  // Update self version
-  pkg.json.version = pkgs[pkg.json.name].nextRelease.version;
+  forEach(pkg.pkgFiles, pkgFile => {
+    if (pkgFile.version) {
+      pkgFile.version = pkg.nextRelease.version;
+    }
+  });
 
   // Update dependency versions
-  pkg.dependencies.forEach(name => {
+  debug('ddddd %O', pkg.dependencies)
+  pkg.dependencies.forEach(({file, key, name}) => {
     if (pkgs[name].nextRelease && pkgs[name].nextRelease.version) {
-      ['devDependencies', 'dependencies'].forEach(key => {
-        if (typeof pkg.json[key] !== 'undefined' && typeof pkg.json[key][name] !== 'undefined') {
-          pkg.json[key][name] = '^' + pkgs[name].nextRelease.version;
-          pkg.changed = true;
-          return false;
-        }
-      });
+      pkg.pkgFiles[file][key][normalizePkgName(name, file)] = '^' + pkgs[name].nextRelease.version;
     }
   });
 }
 
 async function updateNotesAndVersions(context) {
-  const {logger, options, pkg, pkgs} = context;
+  const {cwd, logger, options, pkg, pkgs} = context;
 
   pkg.nextRelease.notes += generateDependencyNotes(pkg, pkgs);
   updateVersions(pkg, pkgs);
 
-  logger.log('Write package %s with data %O', pkg.path, pkg.json);
+  logger.log('Write package in %s with version %O', pkg.path, pkg.nextRelease.version);
+  console.dir(pkg.pkgFiles, {depth: null});
   if (!options.dryRun) {
-    await writePkg(pkg.path, pkg.json, {normalize: false});
+    forEach(pkg.pkgFiles, (content, file) => {
+      fs.writeFileSync(path.join(cwd, file), stringifyPackage(content));
+    });
   }
 }
 
