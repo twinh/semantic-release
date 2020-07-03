@@ -1,4 +1,4 @@
-const {pick, forEach, keyBy, some} = require('lodash');
+const {pick} = require('lodash');
 const marked = require('marked');
 const TerminalRenderer = require('marked-terminal');
 const envCi = require('env-ci');
@@ -134,9 +134,9 @@ const steps = {
         throw new AggregateError(errors);
       }
     },
-    preprocessAll: async (context, contexts) => {
+    preprocessAll: async (context, pkgContexts) => {
       const {cwd, env, logger, options} = context;
-      const releaseToAdd = contexts.find(({releaseToAdd}) => releaseToAdd);
+      const releaseToAdd = pkgContexts.find(({releaseToAdd}) => releaseToAdd);
 
       // Push "releaseToAdd" one time
       if (releaseToAdd && !options.dryRun) {
@@ -352,10 +352,8 @@ async function run(context, plugins) {
     throw new Error('Cannot find packages');
   }
 
-  const defaultContext = context;
-  let contexts = [];
-  for (const pkg of Object.values(pkgs)) {
-    contexts.push({
+  const pkgContexts = Object.values(pkgs).map(pkg => {
+    return {
       ...context,
       // existing
       cwd: pkg.path,
@@ -368,13 +366,13 @@ async function run(context, plugins) {
       pkg,
       pkgs,
       name: pkg.name,
-    });
-  }
+    }
+  });
 
-  return await runSteps(defaultContext, contexts, plugins, steps);
+  return await runSteps(context, pkgContexts, plugins, steps);
 }
 
-async function runSteps(defaultContext, contexts, plugins, steps) {
+async function runSteps(context, pkgContexts, plugins, steps) {
   let result;
   const results = [];
 
@@ -383,7 +381,7 @@ async function runSteps(defaultContext, contexts, plugins, steps) {
       const step = steps[name];
 
       if (step.process) {
-        for (const context of contexts) {
+        for (const context of pkgContexts) {
           result = await step.process(context, plugins);
           if (result === false) {
             break steps;
@@ -397,11 +395,11 @@ async function runSteps(defaultContext, contexts, plugins, steps) {
       }
 
       if (step.preprocessAll) {
-        await step.preprocessAll(defaultContext, contexts);
+        await step.preprocessAll(context, pkgContexts);
       }
 
       if (step.processAll !== false) {
-        await plugins[name + 'All']({...defaultContext, pkgContexts: contexts});
+        await plugins[name + 'All']({...context, pkgContexts});
       }
     }
 
