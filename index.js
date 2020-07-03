@@ -1,4 +1,4 @@
-const {pick, forEach, keyBy, isFunction} = require('lodash');
+const {pick, forEach, keyBy, some} = require('lodash');
 const marked = require('marked');
 const TerminalRenderer = require('marked-terminal');
 const envCi = require('env-ci');
@@ -22,7 +22,6 @@ const getError = require('./lib/get-error');
 const {COMMIT_NAME, COMMIT_EMAIL} = require('./lib/definitions/constants');
 const glob = require('glob');
 const toposort = require('toposort');
-const writePkg = require('write-pkg');
 const path = require('path');
 const mem = require('mem');
 const fs = require('fs');
@@ -139,20 +138,16 @@ const steps = {
       }
     },
     processAll: async (context, contexts) => {
-      const {cwd, env, options} = context;
+      const {cwd, env, logger, options} = context;
+      const releaseToAdd = contexts.find(({releaseToAdd}) => releaseToAdd);
 
       // Push "releaseToAdd" one time
-      for (const context of contexts) {
-        if (context.releaseToAdd) {
-          // await plugins.generateNotesAll();
-          if (!options.dryRun) {
-            await push(options.repositoryUrl, {cwd, env});
-            await pushNotes(options.repositoryUrl, {cwd, env});
-            break;
-          }
-        }
+      if (releaseToAdd && !options.dryRun) {
+        await push(options.repositoryUrl, {cwd, env});
+        await pushNotes(options.repositoryUrl, {cwd, env});
+        logger.success('Push to', options.repositoryUrl);
       }
-    }
+    },
   },
   addChannel: {
     process: async (context, plugins) => {
@@ -588,7 +583,6 @@ function updateVersions(pkg, pkgs) {
   });
 
   // Update dependency versions
-  debug('ddddd %O', pkg.dependencies)
   pkg.dependencies.forEach(({file, key, name}) => {
     if (pkgs[name].nextRelease && pkgs[name].nextRelease.version) {
       pkg.pkgFiles[file][key][normalizePkgName(name, file)] = '^' + pkgs[name].nextRelease.version;
