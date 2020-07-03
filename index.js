@@ -21,12 +21,10 @@ const {verifyAuth, isBranchUpToDate, getGitHead, tag, push, pushNotes, getTagHea
 const getError = require('./lib/get-error');
 const {COMMIT_NAME, COMMIT_EMAIL} = require('./lib/definitions/constants');
 const glob = require('glob');
-const toposort = require('toposort');
 const path = require('path');
 const mem = require('mem');
-const fs = require('fs');
 const debug = require('debug')('semantic-release:index');
-const stringifyPackage = require('stringify-package');
+const fs = require('fs');
 
 marked.setOptions({renderer: new TerminalRenderer()});
 
@@ -105,11 +103,10 @@ const steps = {
         } else {
           const commits = await getCommits({...context, lastRelease, nextRelease}, pkg.path);
 
-          nextRelease.notes = await plugins.generateNotes({...context, commits, lastRelease, nextRelease});
+          // CCC
           pkg.nextRelease = nextRelease;
 
-          // TODO releaseToAdd dont need updateNotesAndVersions?
-          await updateNotesAndVersions(context);
+          nextRelease.notes = await plugins.generateNotes({...context, commits, lastRelease, nextRelease});
 
           if (options.dryRun) {
             logger.warn(`Skip ${nextRelease.gitTag} tag creation in dry-run mode`);
@@ -137,7 +134,7 @@ const steps = {
         throw new AggregateError(errors);
       }
     },
-    processAll: async (context, contexts) => {
+    preprocessAll: async (context, contexts) => {
       const {cwd, env, logger, options} = context;
       const releaseToAdd = contexts.find(({releaseToAdd}) => releaseToAdd);
 
@@ -148,6 +145,7 @@ const steps = {
         logger.success('Push to', options.repositoryUrl);
       }
     },
+    processAll: false,
   },
   addChannel: {
     process: async (context, plugins) => {
@@ -207,20 +205,13 @@ const steps = {
   },
   verifyRelease: {
     process: async (context, plugins) => {
-      const {cwd, env, logger, options, pkg, pkgs} = context;
+      const {cwd, env, logger, options, pkg} = context;
 
       const nextRelease = {
         type: context.nextReleaseType,
         channel: context.branch.channel || null,
         gitHead: await getGitHead({cwd, env}),
       };
-
-      if (!nextRelease.type) {
-        nextRelease.type = generateDependencyRelease(pkg, pkgs);
-      }
-
-      // Record for later query
-      pkg.nextRelease = nextRelease;
 
       if (!nextRelease.type) {
         logger.log('There are no relevant changes, so no new version is released.');
@@ -241,6 +232,9 @@ const steps = {
         });
       }
 
+      // Record for later query
+      pkg.nextRelease = nextRelease;
+
       await plugins.verifyRelease(context);
     }
   },
@@ -252,7 +246,6 @@ const steps = {
       }
 
       nextRelease.notes = await plugins.generateNotes(context);
-      await updateNotesAndVersions(context);
     }
   },
   prepare: {
@@ -354,7 +347,7 @@ async function run(context, plugins) {
 
   options.repositoryUrl = await getGitAuthUrl({...context, branch: {name: ciBranch}});
 
-  const pkgs = await getPkgs(context);
+  let pkgs = await getPkgs(context, plugins);
   if (Object.keys(pkgs).length === 0) {
     throw new Error('Cannot find packages');
   }
@@ -407,12 +400,7 @@ async function runSteps(defaultContext, contexts, plugins, steps) {
         await step.preprocessAll(defaultContext, contexts);
       }
 
-      if (step.processAll === false) {
-        continue;
-      }
-      if (step.processAll) {
-        await step.processAll(defaultContext, contexts);
-      } else {
+      if (step.processAll !== false) {
         await plugins[name + 'All']({...defaultContext, pkgContexts: contexts});
       }
     }
@@ -445,41 +433,7 @@ async function callFail(context, plugins, err) {
   }
 }
 
-const packageConfigs = {
-  'package.json': {
-    keys: [
-      'dependencies',
-      'devDependencies',
-      'peerDependencies',
-      'optionalDependencies',
-    ],
-  },
-  'composer.json': {
-    keys: [
-      'require',
-      'require-dev',
-    ],
-  }
-};
-
-function unifyPkgName(name) {
-  if (name.includes('/') && name.substr(0, 1) !== '@') {
-    return '@' + name;
-  }
-  return name;
-}
-
-function normalizePkgName(name, file) {
-  if (file !== 'composer.json') {
-    return name;
-  }
-  if (name.substr(0, 1) === '@') {
-    return name.substr(1);
-  }
-  return name;
-}
-
-async function getPkgs(context) {
+async function getPkgs(context, plugins) {
   const {cwd, options, logger} = context;
 
   let pkgs = {};
@@ -487,122 +441,28 @@ async function getPkgs(context) {
 
   for (const pkg of options.packages) {
     const dirs = glob.sync(pkg, {cwd});
-
     for (const dir of dirs) {
-      for (const fileName of Object.keys(packageConfigs)) {
-        if (!fs.existsSync(path.join(cwd, dir, fileName))) {
-          continue;
-        }
-
-        const content = JSON.parse(fs.readFileSync(path.join(cwd, dir, fileName)));
-        // TODO check all package name is same
-        const pkgName = unifyPkgName(content.name);
-
-        if (!pkgs[pkgName]) {
-          pkgs[pkgName] = {
-            name: pkgName,
-            path: path.join(cwd, dir),
-            dependencies: [],
-            pkgFiles: {}
-          }
-        }
-
-        // TODO indent, newline
-        pkgs[pkgName].pkgFiles[fileName] = content;
-      }
+      const fullPath = path.join(cwd, dir);
+      const name = await getPkgName(fullPath) || path.basename(dir);
+      pkgs[name] = {
+        name,
+        path: fullPath,
+      };
     }
   }
 
+  pkgs = await plugins.initPkgs({...context, pkgs});
+
   logger.success('Found %d packages: %s', Object.keys(pkgs).length, Object.keys(pkgs).join(', '));
-
-  let graph = [];
-  forEach(pkgs, (pkg) => {
-    forEach(packageConfigs, (config, file) => {
-      if (!pkg.pkgFiles[file]) {
-        return;
-      }
-
-      const pkgFile = pkg.pkgFiles[file];
-      config.keys.forEach(key => {
-        if (!pkgFile[key]) {
-          return;
-        }
-
-        forEach(pkgFile[key], (version, name) => {
-          name = unifyPkgName(name);
-
-          if (!pkgs[name]) {
-            return;
-          }
-
-          name = unifyPkgName(name);
-          graph.push([pkgs[name], pkg]);
-          pkg.dependencies.push({file, key, name});
-        });
-      });
-    });
-  });
-
-  if (graph.length) {
-    pkgs = keyBy(toposort(graph), 'name');
-  }
-
   return pkgs;
 }
 
-function generateDependencyNotes(pkg, pkgs) {
-  let notes = [];
-  pkg.dependencies.forEach(({name}) => {
-    if (pkgs[name].nextRelease && pkgs[name].nextRelease.version) {
-      notes.push(`* **${name}:** upgraded to ${pkgs[name].nextRelease.version}`);
-    }
-  });
-  if (notes.length) {
-    notes.unshift('### Dependencies');
+async function getPkgName(dir) {
+  const pkgFile = path.join(dir, 'package.json');
+  if (fs.existsSync(pkgFile)) {
+    return JSON.parse(fs.readFileSync(pkgFile).toString()).name;
   }
-  return notes.join('\n');
-}
-
-function generateDependencyRelease(pkg, pkgs) {
-  let type;
-
-  pkg.dependencies.forEach(({name}) => {
-    if (pkgs[name].nextRelease.type) {
-      type = 'patch';
-      return false;
-    }
-  });
-  return type;
-}
-
-function updateVersions(pkg, pkgs) {
-  forEach(pkg.pkgFiles, pkgFile => {
-    if (pkgFile.version) {
-      pkgFile.version = pkg.nextRelease.version;
-    }
-  });
-
-  // Update dependency versions
-  pkg.dependencies.forEach(({file, key, name}) => {
-    if (pkgs[name].nextRelease && pkgs[name].nextRelease.version) {
-      pkg.pkgFiles[file][key][normalizePkgName(name, file)] = '^' + pkgs[name].nextRelease.version;
-    }
-  });
-}
-
-async function updateNotesAndVersions(context) {
-  const {cwd, logger, options, pkg, pkgs} = context;
-
-  pkg.nextRelease.notes += generateDependencyNotes(pkg, pkgs);
-  updateVersions(pkg, pkgs);
-
-  logger.log('Write package in %s with version %O', pkg.path, pkg.nextRelease.version);
-  console.dir(pkg.pkgFiles, {depth: null});
-  if (!options.dryRun) {
-    forEach(pkg.pkgFiles, (content, file) => {
-      fs.writeFileSync(path.join(cwd, file), stringifyPackage(content));
-    });
-  }
+  return null;
 }
 
 module.exports = async (cliOptions = {}, {cwd = process.cwd(), env = process.env, stdout, stderr} = {}) => {
