@@ -1,4 +1,4 @@
-const {pick} = require('lodash');
+const {pick, map} = require('lodash');
 const marked = require('marked');
 const TerminalRenderer = require('marked-terminal');
 const envCi = require('env-ci');
@@ -215,7 +215,7 @@ const steps = {
 
       if (!nextRelease.type) {
         logger.log('There are no relevant changes, so no new version is released.');
-        return context.releases.length > 0 ? {releases: context.releases} : null;
+        return context.releases.length > 0 ? {releases: context.releases} : false;
       }
 
       context.nextRelease = nextRelease;
@@ -250,20 +250,12 @@ const steps = {
   },
   prepare: {
     process: async (context, plugins) => {
-      const {nextRelease} = context;
-      if (!nextRelease) {
-        return;
-      }
-
       await plugins.prepare(context);
     }
   },
   publish: {
     process: async (context, plugins) => {
       const {cwd, env, options, logger, nextRelease} = context;
-      if (!nextRelease) {
-        return;
-      }
 
       if (options.dryRun) {
         logger.warn(`Skip ${nextRelease.gitTag} tag creation in dry-run mode`);
@@ -278,8 +270,12 @@ const steps = {
       context.newReleases = releases;
       context.releases.push(...releases);
     },
-    preprocessAll: async (context) => {
+    preprocessAll: async (context, pkgContexts) => {
       const {cwd, env, options, logger} = context;
+      const nextRelease = pkgContexts.find(({nextRelease}) => nextRelease);
+      if (!nextRelease) {
+        return;
+      }
 
       if (!options.dryRun) {
         await push(options.repositoryUrl, {cwd, env});
@@ -291,9 +287,6 @@ const steps = {
   success: {
     process: async (context, plugins) => {
       const {options, logger, nextRelease} = context;
-      if (!nextRelease) {
-        return;
-      }
 
       await plugins.success({...context, releases: context.newReleases});
 
@@ -373,37 +366,37 @@ async function run(context, plugins) {
 }
 
 async function runSteps(context, pkgContexts, plugins, steps) {
-  let result;
-  const results = [];
+  const {options} = context;
 
-  steps:
-    for (const name of Object.keys(steps)) {
-      const step = steps[name];
+  for (const name of Object.keys(steps)) {
+    const step = steps[name];
 
-      if (step.process) {
-        for (const context of pkgContexts) {
-          result = await step.process(context, plugins);
-          if (result === false) {
-            break steps;
-          }
-
-          // Record release results
-          if (result !== null && ['verifyRelease', 'success'].includes(name)) {
-            results.push(result);
-          }
+    if (step.process) {
+      for (const pkgContext of pkgContexts) {
+        if (pkgContext.result === false) {
+          continue;
         }
-      }
 
-      if (step.preprocessAll) {
-        await step.preprocessAll(context, pkgContexts);
-      }
-
-      if (step.processAll !== false) {
-        await plugins[name + 'All']({...context, pkgContexts});
+        pkgContext.result = await step.process(pkgContext, plugins);
       }
     }
 
-  return result === false ? false : results;
+    if (step.preprocessAll) {
+      await step.preprocessAll(context, pkgContexts);
+    }
+
+    if (step.processAll !== false) {
+      await plugins[name + 'All']({...context, pkgContexts});
+    }
+
+    // Stop when all packages are no releases
+    const result = pkgContexts.find(({result}) => result !== false);
+    if (!result) {
+      break;
+    }
+  }
+
+  return options.monorepo ? map(pkgContexts, 'result') : pkgContexts[0].result;
 }
 
 function logErrors({logger, stderr}, err) {
