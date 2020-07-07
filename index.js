@@ -349,7 +349,7 @@ async function run(context, plugins) {
     return {
       ...context,
       // existing
-      cwd: pkg.path,
+      cwd: path.join(context.cwd, pkg.path),
       logger: logger.scope(logger.scopeName, pkg.name),
       options: {
         ...options,
@@ -433,11 +433,10 @@ async function getPkgs(context, plugins) {
   for (const pkg of options.packages) {
     const dirs = glob.sync(pkg, {cwd});
     for (const dir of dirs) {
-      const fullPath = path.join(cwd, dir);
-      const name = await getPkgName(fullPath) || path.basename(dir);
+      const name = await getPkgName(path.join(cwd, dir)) || path.basename(dir);
       pkgs[name] = {
         name,
-        path: fullPath,
+        path: dir,
       };
     }
   }
