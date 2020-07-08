@@ -373,7 +373,7 @@ async function runSteps(context, pkgContexts, plugins, steps) {
 
     if (step.process) {
       for (const pkgContext of pkgContexts) {
-        if (pkgContext.result === false) {
+        if (typeof pkgContext.result !== 'undefined') {
           continue;
         }
 
