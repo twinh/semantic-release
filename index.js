@@ -1,4 +1,4 @@
-const {pick, map} = require('lodash');
+const {pick, map, find} = require('lodash');
 const marked = require('marked');
 const TerminalRenderer = require('marked-terminal');
 const envCi = require('env-ci');
@@ -102,10 +102,6 @@ const steps = {
           errors.push(getError('EINVALIDMAINTENANCEMERGE', {...context, nextRelease}));
         } else {
           const commits = await getCommits({...context, lastRelease, nextRelease}, pkg.path);
-
-          // CCC
-          pkg.nextRelease = nextRelease;
-
           nextRelease.notes = await plugins.generateNotes({...context, commits, lastRelease, nextRelease});
 
           if (options.dryRun) {
@@ -136,7 +132,7 @@ const steps = {
     },
     preprocessAll: async (context, pkgContexts) => {
       const {cwd, env, logger, options} = context;
-      const releaseToAdd = pkgContexts.find(({releaseToAdd}) => releaseToAdd);
+      const releaseToAdd = Object.values(pkgContexts).find(({releaseToAdd}) => releaseToAdd);
 
       // Push "releaseToAdd" one time
       if (releaseToAdd && !options.dryRun) {
@@ -233,9 +229,6 @@ const steps = {
           ),
         });
       }
-
-      // Record for later query
-      pkg.nextRelease = nextRelease;
 
       await plugins.verifyRelease(context);
     }
@@ -338,8 +331,8 @@ async function run(context, plugins) {
     throw new Error('Cannot find packages');
   }
 
-  const pkgContexts = Object.values(pkgs).map(pkg => {
-    return {
+  const pkgContexts = Object.values(pkgs).reduce((pkgContexts, pkg) => ({
+    ...pkgContexts, [pkg.name]: {
       ...context,
       // existing
       cwd: path.join(context.cwd, pkg.path),
@@ -353,19 +346,20 @@ async function run(context, plugins) {
       pkgs,
       name: pkg.name,
     }
-  });
+  }), {});
 
   return await runSteps(context, pkgContexts, plugins, steps);
 }
 
 async function runSteps(context, pkgContexts, plugins, steps) {
   const {options} = context;
+  const pkgContextsArray = Object.values(pkgContexts);
 
   for (const name of Object.keys(steps)) {
     const step = steps[name];
 
     if (step.process) {
-      for (const pkgContext of pkgContexts) {
+      for (const pkgContext of pkgContextsArray) {
         if (typeof pkgContext.result !== 'undefined') {
           continue;
         }
@@ -383,13 +377,13 @@ async function runSteps(context, pkgContexts, plugins, steps) {
     }
 
     // Stop when all packages are no releases
-    const result = pkgContexts.find(({result}) => result !== false);
+    const result = pkgContextsArray.find(({result}) => result !== false);
     if (!result) {
       break;
     }
   }
 
-  return options.monorepo ? map(pkgContexts, 'result') : pkgContexts[0].result;
+  return options.monorepo ? map(pkgContexts, 'result') : pkgContextsArray[0].result;
 }
 
 function logErrors({logger, stderr}, err) {
