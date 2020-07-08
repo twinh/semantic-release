@@ -87,7 +87,7 @@ const steps = {
   },
   releaseToAddGenerateNotes: {
     process: async (context, plugins) => {
-      const {cwd, env, options, logger, pkg} = context;
+      const {cwd, rootCwd, env, options, logger, pkg} = context;
 
       const errors = [];
       context.releases = [];
@@ -101,7 +101,7 @@ const steps = {
         if (context.branch.mergeRange && !semver.satisfies(nextRelease.version, context.branch.mergeRange)) {
           errors.push(getError('EINVALIDMAINTENANCEMERGE', {...context, nextRelease}));
         } else {
-          const commits = await getCommits({...context, lastRelease, nextRelease}, pkg.path);
+          const commits = await getCommits({...context, lastRelease, nextRelease, cwd: rootCwd}, pkg.path);
           nextRelease.notes = await plugins.generateNotes({...context, commits, lastRelease, nextRelease});
 
           if (options.dryRun) {
@@ -181,7 +181,7 @@ const steps = {
   },
   analyzeCommits: {
     process: async (context, plugins) => {
-      const {cwd, env, logger, pkg} = context;
+      const {cwd, rootCwd, env, logger, pkg} = context;
 
       context.lastRelease = getLastRelease(context);
       if (context.lastRelease.gitHead) {
@@ -197,7 +197,7 @@ const steps = {
       }
 
       // Filter commits by package path
-      context.commits = await getCommits(context, pkg.path);
+      context.commits = await getCommits({...context, cwd: rootCwd}, pkg.path);
       context.nextReleaseType = await plugins.analyzeCommits(context);
     }
   },
@@ -345,6 +345,7 @@ async function run(context, plugins) {
       pkg,
       pkgs,
       name: pkg.name,
+      rootCwd: context.cwd,
     }
   }), {});
 
