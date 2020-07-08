@@ -1,4 +1,4 @@
-const {pick, map, find} = require('lodash');
+const {pick, map} = require('lodash');
 const marked = require('marked');
 const TerminalRenderer = require('marked-terminal');
 const envCi = require('env-ci');
@@ -130,8 +130,8 @@ const steps = {
         throw new AggregateError(errors);
       }
     },
-    preprocessAll: async (context, pkgContexts) => {
-      const {cwd, env, logger, options} = context;
+    preprocessAll: async (context) => {
+      const {cwd, env, logger, options, pkgContexts} = context;
       const releaseToAdd = Object.values(pkgContexts).find(({releaseToAdd}) => releaseToAdd);
 
       // Push "releaseToAdd" one time
@@ -199,11 +199,16 @@ const steps = {
       // Filter commits by package path
       context.commits = await getCommits({...context, cwd: rootCwd}, pkg.path);
       context.nextReleaseType = await plugins.analyzeCommits(context);
+    },
+    postprocessAll: async (context, results) => {
+      Object.entries(results).forEach(([name, nextReleaseType]) => {
+        context.pkgContexts[name].nextReleaseType = nextReleaseType;
+      });
     }
   },
   verifyRelease: {
     process: async (context, plugins) => {
-      const {cwd, env, logger, options, pkg} = context;
+      const {cwd, env, logger, options} = context;
 
       const nextRelease = {
         type: context.nextReleaseType,
@@ -260,7 +265,7 @@ const steps = {
       context.newReleases = releases;
       context.releases.push(...releases);
     },
-    preprocessAll: async (context, pkgContexts) => {
+    preprocessAll: async (context) => {
       const {cwd, env, options, logger} = context;
 
       if (!options.dryRun) {
@@ -346,8 +351,10 @@ async function run(context, plugins) {
       pkgs,
       name: pkg.name,
       rootCwd: context.cwd,
+      pkgContexts
     }
   }), {});
+  context.pkgContexts = pkgContexts;
 
   return await runSteps(context, pkgContexts, plugins, steps);
 }
@@ -370,11 +377,16 @@ async function runSteps(context, pkgContexts, plugins, steps) {
     }
 
     if (step.preprocessAll) {
-      await step.preprocessAll(context, pkgContexts);
+      await step.preprocessAll(context);
     }
 
+    let allResults = [];
     if (step.processAll !== false) {
-      await plugins[name + 'All']({...context, pkgContexts});
+      allResults = await plugins[name + 'All'](context);
+    }
+
+    if (step.postprocessAll) {
+      await step.postprocessAll(context, allResults);
     }
 
     // Stop when all packages are no releases
