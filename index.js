@@ -149,23 +149,25 @@ const steps = {
   },
   addChannel: {
     process: async (context, plugins) => {
-      if (context.releaseToAdd) {
-        const {lastRelease, currentRelease, nextRelease} = context.releaseToAdd;
-        const commits = context.commits;
-
-        context.branch.tags.push({
-          version: nextRelease.version,
-          channel: nextRelease.channel,
-          gitTag: nextRelease.gitTag,
-          gitHead: nextRelease.gitHead,
-        });
-
-        const releases = await plugins.addChannel({...context, commits, lastRelease, currentRelease, nextRelease});
-        context.releases.push(...releases);
-
-        // Record for next step
-        context.newReleases = releases;
+      if (!context.releaseToAdd) {
+        return;
       }
+
+      const {lastRelease, currentRelease, nextRelease} = context.releaseToAdd;
+      const commits = context.commits;
+
+      context.branch.tags.push({
+        version: nextRelease.version,
+        channel: nextRelease.channel,
+        gitTag: nextRelease.gitTag,
+        gitHead: nextRelease.gitHead,
+      });
+
+      const releases = await plugins.addChannel({...context, commits, lastRelease, currentRelease, nextRelease});
+      context.releases.push(...releases);
+
+      // Record for next step
+      context.newReleases = releases;
     }
   },
   addChannelSuccess: {
@@ -240,12 +242,7 @@ const steps = {
   },
   generateNotes: {
     process: async (context, plugins) => {
-      const {nextRelease} = context;
-      if (!nextRelease) {
-        return;
-      }
-
-      nextRelease.notes = await plugins.generateNotes(context);
+      context.nextRelease.notes = await plugins.generateNotes(context);
     }
   },
   prepare: {
@@ -272,10 +269,6 @@ const steps = {
     },
     preprocessAll: async (context, pkgContexts) => {
       const {cwd, env, options, logger} = context;
-      const nextRelease = pkgContexts.find(({nextRelease}) => nextRelease);
-      if (!nextRelease) {
-        return;
-      }
 
       if (!options.dryRun) {
         await push(options.repositoryUrl, {cwd, env});
