@@ -19,7 +19,7 @@ const getBranches = require('./lib/branches');
 const getLogger = require('./lib/get-logger');
 const {verifyAuth, isBranchUpToDate, getGitHead, tag, push, pushNotes, getTagHead, addNote} = require('./lib/git');
 const getError = require('./lib/get-error');
-const {COMMIT_NAME, COMMIT_EMAIL} = require('./lib/definitions/constants');
+const {COMMIT_NAME, COMMIT_EMAIL, RELEASE_TYPE} = require('./lib/definitions/constants');
 const glob = require('glob');
 const path = require('path');
 const mem = require('mem');
@@ -204,6 +204,31 @@ const steps = {
       Object.entries(results).forEach(([name, nextReleaseType]) => {
         context.pkgContexts[name].nextReleaseType = nextReleaseType;
       });
+
+      const types = map(context.pkgContexts, 'nextReleaseType');
+      const max = RELEASE_TYPE[
+        types.reduce((highest, result) => {
+          const typeIndex = RELEASE_TYPE.indexOf(result);
+          return typeIndex > highest ? typeIndex : highest;
+        }, -1)
+        ];
+
+      Object.values(context.pkgContexts).forEach(pkgContext => {
+        pkgContext.nextReleaseType = max;
+        pkgContext.nextReleaseVersion = getNextVersion({
+          ...pkgContext, nextRelease: {
+            type: max,
+            channel: pkgContext.branch.channel || null,
+          }
+        });
+      });
+
+      const versions = map(context.pkgContexts, 'nextReleaseVersion');
+      const maxVersion = versions.reduce((v1, v2) => semver.gt(v1, v2) ? v1 : v2);
+
+      Object.values(context.pkgContexts).forEach(pkgContext => {
+        pkgContext.nextReleaseVersion = maxVersion;
+      });
     }
   },
   verifyRelease: {
@@ -222,7 +247,7 @@ const steps = {
       }
 
       context.nextRelease = nextRelease;
-      nextRelease.version = getNextVersion(context);
+      nextRelease.version = context.nextReleaseVersion || getNextVersion(context);
       nextRelease.gitTag = makeTag(options.tagFormat, nextRelease.version);
       nextRelease.name = nextRelease.gitTag;
 
@@ -252,13 +277,17 @@ const steps = {
     process: async (context, plugins) => {
       const {cwd, env, options, logger, nextRelease} = context;
 
-      if (options.dryRun) {
-        logger.warn(`Skip ${nextRelease.gitTag} tag creation in dry-run mode`);
+      if (canTag(context)) {
+        if (options.dryRun) {
+          logger.warn(`Skip ${nextRelease.gitTag} tag creation in dry-run mode`);
+        } else {
+          // Create the tag before calling the publish plugins as some require the tag to exists
+          await tag(nextRelease.gitTag, nextRelease.gitHead, {cwd, env});
+          await addNote({channels: [nextRelease.channel]}, nextRelease.gitHead, {cwd, env});
+          logger.success(`Created tag ${nextRelease.gitTag}`);
+        }
       } else {
-        // Create the tag before calling the publish plugins as some require the tag to exists
-        await tag(nextRelease.gitTag, nextRelease.gitHead, {cwd, env});
-        await addNote({channels: [nextRelease.channel]}, nextRelease.gitHead, {cwd, env});
-        logger.success(`Created tag ${nextRelease.gitTag}`);
+        logger.log('Skip rest tags on fixed version mode.');
       }
 
       const releases = await plugins.publish(context);
@@ -453,6 +482,14 @@ async function getPkgName(dir) {
     return JSON.parse(fs.readFileSync(pkgFile).toString()).name;
   }
   return null;
+}
+
+function canTag({options: {version}, name, pkgs}) {
+  if (version !== 'fixed') {
+    return true;
+  }
+
+  return name === Object.keys(pkgs)[0];
 }
 
 module.exports = async (cliOptions = {}, {cwd = process.cwd(), env = process.env, stdout, stderr} = {}) => {
