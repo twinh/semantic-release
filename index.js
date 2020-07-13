@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const {pick, map} = require('lodash');
+const {pick, map, mapValues, forEach} = require('lodash');
 const marked = require('marked');
 const TerminalRenderer = require('marked-terminal');
 const envCi = require('env-ci');
@@ -367,24 +367,22 @@ async function run(context, plugins) {
     throw new Error('Cannot find packages');
   }
 
-  const pkgContexts = Object.values(pkgs).reduce((pkgContexts, pkg) => ({
-    ...pkgContexts, [pkg.name]: {
-      ...context,
-      // existing
-      cwd: path.join(context.cwd, pkg.path),
-      logger: logger.scope(logger.scopeName, pkg.name),
-      options: {
-        ...options,
-        tagFormat: options.tagFormat.replace('${name}', pkg.name),
-      },
-      // new
-      pkg,
-      pkgs,
-      name: pkg.name,
-      rootCwd: context.cwd,
-      pkgContexts
-    }
-  }), {});
+  const pkgContexts = mapValues(pkgs, pkg => ({
+    ...context,
+    // existing
+    cwd: path.join(context.cwd, pkg.path),
+    logger: logger.scope(logger.scopeName, pkg.name),
+    options: {
+      ...options,
+      tagFormat: options.tagFormat.replace('${name}', pkg.name),
+    },
+    // new
+    pkg,
+    pkgs,
+    name: pkg.name,
+    rootCwd: context.cwd,
+  }));
+  forEach(pkgContexts, pkgContext => pkgContext.pkgContexts = pkgContexts);
   context.pkgContexts = pkgContexts;
 
   return await runSteps(context, pkgContexts, plugins, steps);
