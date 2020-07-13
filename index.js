@@ -205,7 +205,7 @@ const steps = {
         context.pkgContexts[name].nextReleaseType = nextReleaseType;
       });
 
-      if (context.options.version !== 'fixed') {
+      if (context.options.versionMode !== 'fixed') {
         return;
       }
 
@@ -486,8 +486,8 @@ async function getPkgName(dir) {
   return null;
 }
 
-function canTag({options: {version}, name, pkgs}) {
-  if (version !== 'fixed') {
+function canTag({options: {versionMode}, name, pkgs}) {
+  if (versionMode !== 'fixed') {
     return true;
   }
 
