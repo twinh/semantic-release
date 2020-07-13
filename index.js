@@ -1,3 +1,5 @@
+const fs = require('fs');
+const path = require('path');
 const {pick, map} = require('lodash');
 const marked = require('marked');
 const TerminalRenderer = require('marked-terminal');
@@ -5,6 +7,9 @@ const envCi = require('env-ci');
 const hookStd = require('hook-std');
 const semver = require('semver');
 const AggregateError = require('aggregate-error');
+const glob = require('glob');
+const mem = require('mem');
+const debug = require('debug')('semantic-release:index');
 const pkg = require('./package.json');
 const hideSensitive = require('./lib/hide-sensitive');
 const getConfig = require('./lib/get-config');
@@ -19,12 +24,7 @@ const getBranches = require('./lib/branches');
 const getLogger = require('./lib/get-logger');
 const {verifyAuth, isBranchUpToDate, getGitHead, tag, push, pushNotes, getTagHead, addNote} = require('./lib/git');
 const getError = require('./lib/get-error');
-const {COMMIT_NAME, COMMIT_EMAIL, RELEASE_TYPE} = require('./lib/definitions/constants');
-const glob = require('glob');
-const path = require('path');
-const mem = require('mem');
-const debug = require('debug')('semantic-release:index');
-const fs = require('fs');
+const {COMMIT_NAME, COMMIT_EMAIL, RELEASE_TYPE, FIRST_RELEASE} = require('./lib/definitions/constants');
 
 marked.setOptions({renderer: new TerminalRenderer()});
 
@@ -205,29 +205,31 @@ const steps = {
         context.pkgContexts[name].nextReleaseType = nextReleaseType;
       });
 
-      const types = map(context.pkgContexts, 'nextReleaseType');
-      const max = RELEASE_TYPE[
-        types.reduce((highest, result) => {
-          const typeIndex = RELEASE_TYPE.indexOf(result);
-          return typeIndex > highest ? typeIndex : highest;
-        }, -1)
-        ];
+      if (context.options.version !== 'fixed') {
+        return;
+      }
 
-      Object.values(context.pkgContexts).forEach(pkgContext => {
-        pkgContext.nextReleaseType = max;
-        pkgContext.nextReleaseVersion = getNextVersion({
+      const pkgContextArray = Object.values(context.pkgContexts);
+      const highestReleaseType = RELEASE_TYPE[pkgContextArray.reduce((highest, pkgContext) => {
+        const typeIndex = RELEASE_TYPE.indexOf(pkgContext.nextReleaseType);
+        return typeIndex > highest ? typeIndex : highest;
+      }, -1)];
+      if (!highestReleaseType) {
+        return;
+      }
+
+      const highestVersion = pkgContextArray.reduce((highestVersion, pkgContext) => {
+        const nextReleaseVersion = getNextVersion({
           ...pkgContext, nextRelease: {
-            type: max,
+            type: highestReleaseType,
             channel: pkgContext.branch.channel || null,
           }
         });
-      });
+        return semver.gt(highestVersion, nextReleaseVersion) ? highestVersion : nextReleaseVersion;
+      }, FIRST_RELEASE);
 
-      const versions = map(context.pkgContexts, 'nextReleaseVersion');
-      const maxVersion = versions.reduce((v1, v2) => semver.gt(v1, v2) ? v1 : v2);
-
-      Object.values(context.pkgContexts).forEach(pkgContext => {
-        pkgContext.nextReleaseVersion = maxVersion;
+      pkgContextArray.forEach(pkgContext => {
+        pkgContext.nextReleaseVersion = highestVersion;
       });
     }
   },
@@ -241,7 +243,7 @@ const steps = {
         gitHead: await getGitHead({cwd, env}),
       };
 
-      if (!nextRelease.type) {
+      if (!nextRelease.type && !context.nextReleaseVersion) {
         logger.log('There are no relevant changes, so no new version is released.');
         return context.releases.length > 0 ? {releases: context.releases} : false;
       }
