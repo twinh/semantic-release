@@ -1,7 +1,7 @@
 const test = require('ava');
 const {stub} = require('sinon');
 const getCommits = require('../lib/get-commits');
-const {gitRepo, gitCommits, gitDetachedHead} = require('./helpers/git-utils');
+const {gitRepo, gitCommits, gitCommitFiles, gitDetachedHead} = require('./helpers/git-utils');
 
 test.beforeEach((t) => {
   // Stub the logger functions
@@ -111,4 +111,32 @@ test('Return empty array if there is no commits', async (t) => {
 
   // Verify no commit is retrieved
   t.deepEqual(result, []);
+});
+
+test('Get commits from path', async t => {
+  // Create a git repository, set the current working directory at the root of the repo
+  const {cwd} = await gitRepo();
+  // Add commits to the master branch
+  const commits = await gitCommitFiles(['pkg1/first.txt', 'pkg2/second.txt'], {cwd});
+
+  // Retrieve the commits with the commits module
+  const result = await getCommits({cwd, lastRelease: {}, logger: t.context.logger}, 'pkg1');
+
+  // Verify the commits created and retrieved by the module are identical
+  t.is(result.length, 1);
+  t.deepEqual(result[0], commits[1]);
+});
+
+test('Get commits that root path will be ignored', async t => {
+  // Create a git repository, set the current working directory at the root of the repo
+  const {cwd} = await gitRepo();
+  // Add commits to the master branch
+  const commits = await gitCommits(['First', 'Second'], {cwd});
+
+  // Retrieve the commits with the commits module
+  const result = await getCommits({cwd, lastRelease: {}, logger: t.context.logger}, '.');
+
+  // Verify the commits created and retrieved by the module are identical
+  t.is(result.length, 2);
+  t.deepEqual(result, commits);
 });

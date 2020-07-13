@@ -1,9 +1,11 @@
+const path = require('path');
 const tempy = require('tempy');
 const execa = require('execa');
 const fileUrl = require('file-url');
 const pEachSeries = require('p-each-series');
 const gitLogParser = require('git-log-parser');
 const getStream = require('get-stream');
+const fs = require('fs-extra');
 const {GIT_NOTE_REF} = require('../../lib/definitions/constants');
 
 /**
@@ -89,6 +91,27 @@ async function gitCommits(messages, execaOptions) {
       (await execa('git', ['commit', '-m', message, '--allow-empty', '--no-gpg-sign'], execaOptions)).stdout
   );
   return (await gitGetCommits(undefined, execaOptions)).slice(0, messages.length);
+}
+
+/**
+ * Create commits with files on the current git repository.
+ *
+ * @param {Array<string>} files Commit file names.
+ * @param {Object} [execaOpts] Options to pass to `execa`.
+ *
+ * @returns {Array<Commit>} The created commits, in reverse order (to match `git log` order).
+ */
+async function gitCommitFiles(files, execaOptions) {
+  const {cwd} = execaOptions;
+  await pEachSeries(
+    files,
+    async (file) => {
+      await fs.outputFile(path.join(cwd, file), file);
+      await execa('git', ['add', file], execaOptions);
+      return (await execa('git', ['commit', '-am', file, '--allow-empty', '--no-gpg-sign'], execaOptions)).stdout;
+    }
+  );
+  return (await gitGetCommits(undefined, execaOptions)).slice(0, files.length);
 }
 
 /**
@@ -324,6 +347,7 @@ module.exports = {
   gitRepo,
   initBareRepo,
   gitCommits,
+  gitCommitFiles,
   gitGetCommits,
   gitCheckout,
   gitFetch,
