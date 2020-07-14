@@ -4,6 +4,7 @@ branches:
     - next
     - beta
     - /^\d+\.(\d+|x)(\.x)?$/
+    - feature/monorepo
 
 jobs:
   include:
