@@ -137,7 +137,7 @@ test('Read options from .releaserc.yml', async (t) => {
     tagFormat: `v\${version}`,
     plugins: false,
     monorepo: false,
-    packages: ['.']
+    packages: ['.'],
   };
   // Create package.json in repository root
   await writeFile(path.resolve(cwd, '.releaserc.yml'), yaml.safeDump(options));
@@ -161,7 +161,7 @@ test('Read options from .releaserc.json', async (t) => {
     tagFormat: `v\${version}`,
     plugins: false,
     monorepo: false,
-    packages: ['.']
+    packages: ['.'],
   };
   // Create package.json in repository root
   await outputJson(path.resolve(cwd, '.releaserc.json'), options);
@@ -543,7 +543,7 @@ test('Throw an Error if one of the shareable config cannot be found', async (t) 
   });
 });
 
-test('Read monorepo packages from package.json', async t => {
+test('Read monorepo packages from package.json', async (t) => {
   const pkg = {workspaces: ['packages/*']};
 
   // Create a git repository, set the current working directory at the root of the repo
@@ -558,7 +558,7 @@ test('Read monorepo packages from package.json', async t => {
   t.is(options.monorepo, true);
 });
 
-test('Set monorepo to false will ignore packages config', async t => {
+test('Set monorepo to false will ignore packages config', async (t) => {
   const pkg = {workspaces: ['packages/*']};
 
   // Create a git repository, set the current working directory at the root of the repo
@@ -573,7 +573,7 @@ test('Set monorepo to false will ignore packages config', async t => {
   t.deepEqual(options.packages, ['.']);
 });
 
-test('Monorepo packages will use a custom tag format', async t => {
+test('Monorepo packages will use a custom tag format', async (t) => {
   const pkg = {workspaces: ['packages/*']};
 
   // Create a git repository, set the current working directory at the root of the repo
@@ -585,5 +585,5 @@ test('Monorepo packages will use a custom tag format', async t => {
   const {options} = await t.context.getConfig({cwd});
 
   t.is(options.monorepo, true);
-  t.is(options.tagFormat, '${name}@${version}');
+  t.is(options.tagFormat, `\${name}@\${version}`);
 });

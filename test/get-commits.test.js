@@ -113,7 +113,7 @@ test('Return empty array if there is no commits', async (t) => {
   t.deepEqual(result, []);
 });
 
-test('Get commits from path', async t => {
+test('Get commits from path', async (t) => {
   // Create a git repository, set the current working directory at the root of the repo
   const {cwd} = await gitRepo();
   // Add commits to the master branch
@@ -127,7 +127,7 @@ test('Get commits from path', async t => {
   t.deepEqual(result[0], commits[1]);
 });
 
-test('Get commits that root path will be ignored', async t => {
+test('Get commits that root path will be ignored', async (t) => {
   // Create a git repository, set the current working directory at the root of the repo
   const {cwd} = await gitRepo();
   // Add commits to the master branch

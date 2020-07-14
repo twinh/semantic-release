@@ -83,7 +83,7 @@ const steps = {
       }
 
       await plugins.verifyConditions(context);
-    }
+    },
   },
   releaseToAddGenerateNotes: {
     name: 'generateNotes',
@@ -110,7 +110,7 @@ const steps = {
           } else {
             await addNote({channels: [...currentRelease.channels, nextRelease.channel]}, nextRelease.gitHead, {
               cwd,
-              env
+              env,
             });
 
             logger.success(
@@ -150,7 +150,7 @@ const steps = {
       }
 
       const {lastRelease, currentRelease, nextRelease} = context.releaseToAdd;
-      const commits = context.commits;
+      const {commits} = context;
 
       context.branch.tags.push({
         version: nextRelease.version,
@@ -164,7 +164,7 @@ const steps = {
 
       // Record for next step
       context.newReleases = releases;
-    }
+    },
   },
   addChannelSuccess: {
     name: 'success',
@@ -173,7 +173,7 @@ const steps = {
         return;
       }
 
-      const commits = context.commits;
+      const {commits} = context;
       const {lastRelease, nextRelease} = context.releaseToAdd;
       const releases = context.newReleases;
       await plugins.success({...context, lastRelease, commits, nextRelease, releases});
@@ -210,28 +210,32 @@ const steps = {
       }
 
       const pkgContextArray = Object.values(context.pkgContexts);
-      const highestReleaseType = RELEASE_TYPE[pkgContextArray.reduce((highest, pkgContext) => {
-        const typeIndex = RELEASE_TYPE.indexOf(pkgContext.nextReleaseType);
-        return typeIndex > highest ? typeIndex : highest;
-      }, -1)];
+      const highestReleaseType =
+        RELEASE_TYPE[
+          pkgContextArray.reduce((highest, pkgContext) => {
+            const typeIndex = RELEASE_TYPE.indexOf(pkgContext.nextReleaseType);
+            return typeIndex > highest ? typeIndex : highest;
+          }, -1)
+        ];
       if (!highestReleaseType) {
         return;
       }
 
       const highestVersion = pkgContextArray.reduce((highestVersion, pkgContext) => {
         const nextReleaseVersion = getNextVersion({
-          ...pkgContext, nextRelease: {
+          ...pkgContext,
+          nextRelease: {
             type: highestReleaseType,
             channel: pkgContext.branch.channel || null,
-          }
+          },
         });
         return semver.gt(highestVersion, nextReleaseVersion) ? highestVersion : nextReleaseVersion;
       }, FIRST_RELEASE);
 
-      pkgContextArray.forEach(pkgContext => {
+      pkgContextArray.forEach((pkgContext) => {
         pkgContext.nextReleaseVersion = highestVersion;
       });
-    }
+    },
   },
   verifyRelease: {
     process: async (context, plugins) => {
@@ -263,17 +267,17 @@ const steps = {
       }
 
       await plugins.verifyRelease(context);
-    }
+    },
   },
   generateNotes: {
     process: async (context, plugins) => {
       context.nextRelease.notes = await plugins.generateNotes(context);
-    }
+    },
   },
   prepare: {
     process: async (context, plugins) => {
       await plugins.prepare(context);
-    }
+    },
   },
   createTag: {
     process: async (context) => {
@@ -308,7 +312,7 @@ const steps = {
       const releases = await plugins.publish(context);
       context.newReleases = releases;
       context.releases.push(...releases);
-    }
+    },
   },
   success: {
     process: async (context, plugins) => {
@@ -328,8 +332,8 @@ const steps = {
       }
 
       return pick(context, ['lastRelease', 'commits', 'nextRelease', 'releases']);
-    }
-  }
+    },
+  },
 };
 
 /* eslint complexity: off */
@@ -366,30 +370,32 @@ async function run(context, plugins) {
 
   options.repositoryUrl = await getGitAuthUrl({...context, branch: {name: ciBranch}});
 
-  let pkgs = await getPkgs(context, plugins);
+  const pkgs = await getPkgs(context, plugins);
   if (Object.keys(pkgs).length === 0) {
     throw new Error('Cannot find packages');
   }
 
-  const pkgContexts = mapValues(pkgs, pkg => ({
+  const pkgContexts = mapValues(pkgs, (pkg) => ({
     ...context,
-    // existing
+    // Existing
     cwd: path.join(context.cwd, pkg.path),
     logger: logger.scope(logger.scopeName, pkg.name),
     options: {
       ...options,
-      tagFormat: options.tagFormat.replace('${name}', pkg.name),
+      tagFormat: options.tagFormat.replace(`\${name}`, pkg.name),
     },
-    // new
+    // New
     pkg,
     pkgs,
     name: pkg.name,
     rootCwd: context.cwd,
   }));
-  forEach(pkgContexts, pkgContext => pkgContext.pkgContexts = pkgContexts);
+  forEach(pkgContexts, (pkgContext) => {
+    pkgContext.pkgContexts = pkgContexts;
+  });
   context.pkgContexts = pkgContexts;
 
-  return await runSteps(context, pkgContexts, plugins, steps);
+  return runSteps(context, pkgContexts, plugins, steps);
 }
 
 async function runSteps(context, pkgContexts, plugins, steps) {
@@ -466,7 +472,7 @@ async function getPkgs(context, plugins) {
   for (const pkg of options.packages) {
     const dirs = glob.sync(pkg, {cwd});
     for (const dir of dirs) {
-      const name = await getPkgName(path.join(cwd, dir)) || path.basename(dir);
+      const name = (await getPkgName(path.join(cwd, dir))) || path.basename(dir);
       pkgs[name] = {
         name,
         path: dir,
@@ -485,6 +491,7 @@ async function getPkgName(dir) {
   if (fs.existsSync(pkgFile)) {
     return JSON.parse(fs.readFileSync(pkgFile).toString()).name;
   }
+
   return null;
 }
 

@@ -103,14 +103,11 @@ async function gitCommits(messages, execaOptions) {
  */
 async function gitCommitFiles(files, execaOptions) {
   const {cwd} = execaOptions;
-  await pEachSeries(
-    files,
-    async (file) => {
-      await fs.outputFile(path.join(cwd, file), file);
-      await execa('git', ['add', file], execaOptions);
-      return (await execa('git', ['commit', '-am', file, '--allow-empty', '--no-gpg-sign'], execaOptions)).stdout;
-    }
-  );
+  await pEachSeries(files, async (file) => {
+    await fs.outputFile(path.join(cwd, file), file);
+    await execa('git', ['add', file], execaOptions);
+    return (await execa('git', ['commit', '-am', file, '--allow-empty', '--no-gpg-sign'], execaOptions)).stdout;
+  });
   return (await gitGetCommits(undefined, execaOptions)).slice(0, files.length);
 }
 

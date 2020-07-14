@@ -102,7 +102,7 @@ test('Plugins are called with expected values', async (t) => {
     globalOpt: 'global',
     tagFormat: `v\${version}`,
     monorepo: false,
-    packages: ['.']
+    packages: ['.'],
   };
   const branches = [
     {
@@ -151,16 +151,7 @@ test('Plugins are called with expected values', async (t) => {
   const pkgs = {[name]: pkg};
   const rootCwd = cwd;
 
-  const defaultContextKeys = [
-    'cwd',
-    'env',
-    'envCi',
-    'options',
-    'pkgContexts',
-    'stdout',
-    'stderr',
-    'logger',
-  ].sort();
+  const defaultContextKeys = ['cwd', 'env', 'envCi', 'options', 'pkgContexts', 'stdout', 'stderr', 'logger'].sort();
   let pkgContextKeys = [
     'cwd',
     'env',
@@ -175,7 +166,7 @@ test('Plugins are called with expected values', async (t) => {
     'branch',
     'stdout',
     'stderr',
-    'logger'
+    'logger',
   ].sort();
 
   const releases = [
@@ -238,14 +229,14 @@ test('Plugins are called with expected values', async (t) => {
   t.deepEqual(verifyConditionsAll.args[0][0], config);
   t.deepEqual(verifyConditionsAll.args[0][1].cwd, cwd);
   t.deepEqual(verifyConditionsAll.args[0][1].options, options);
-  t.deepEqual(verifyConditionsAll.args[0][1].branch, undefined);
-  t.deepEqual(verifyConditionsAll.args[0][1].branches, undefined);
+  t.is(verifyConditionsAll.args[0][1].branch, undefined);
+  t.is(verifyConditionsAll.args[0][1].branches, undefined);
   t.deepEqual(verifyConditionsAll.args[0][1].logger, t.context.logger);
   t.deepEqual(verifyConditionsAll.args[0][1].envCi, envCi);
-  t.deepEqual(verifyConditionsAll.args[0][1].name, undefined);
-  t.deepEqual(verifyConditionsAll.args[0][1].pkg, undefined);
-  t.deepEqual(verifyConditionsAll.args[0][1].pkgs, undefined);
-  t.deepEqual(verifyConditionsAll.args[0][1].rootCwd, undefined);
+  t.is(verifyConditionsAll.args[0][1].name, undefined);
+  t.is(verifyConditionsAll.args[0][1].pkg, undefined);
+  t.is(verifyConditionsAll.args[0][1].pkgs, undefined);
+  t.is(verifyConditionsAll.args[0][1].rootCwd, undefined);
   t.deepEqual(verifyConditionsAll.args[0][1].pkgContexts[name].name, name);
   t.deepEqual(Object.keys(verifyConditionsAll.args[0][1]).sort(), defaultContextKeys);
 
@@ -332,14 +323,14 @@ test('Plugins are called with expected values', async (t) => {
 
   t.deepEqual(generateNotesAll.args[0][0], config);
   t.deepEqual(generateNotesAll.args[0][1].options, options);
-  t.deepEqual(generateNotesAll.args[0][1].branch, undefined);
-  t.deepEqual(generateNotesAll.args[0][1].branches, undefined);
+  t.is(generateNotesAll.args[0][1].branch, undefined);
+  t.is(generateNotesAll.args[0][1].branches, undefined);
   t.deepEqual(generateNotesAll.args[0][1].logger, t.context.logger);
   t.deepEqual(generateNotesAll.args[0][1].envCi, envCi);
-  t.deepEqual(generateNotesAll.args[0][1].name, undefined);
-  t.deepEqual(generateNotesAll.args[0][1].pkg, undefined);
-  t.deepEqual(generateNotesAll.args[0][1].pkgs, undefined);
-  t.deepEqual(generateNotesAll.args[0][1].rootCwd, undefined);
+  t.is(generateNotesAll.args[0][1].name, undefined);
+  t.is(generateNotesAll.args[0][1].pkg, undefined);
+  t.is(generateNotesAll.args[0][1].pkgs, undefined);
+  t.is(generateNotesAll.args[0][1].rootCwd, undefined);
   t.deepEqual(generateNotesAll.args[0][1].pkgContexts[name].name, name);
   t.deepEqual(Object.keys(generateNotesAll.args[0][1]).sort(), defaultContextKeys);
 
@@ -382,14 +373,14 @@ test('Plugins are called with expected values', async (t) => {
 
   t.deepEqual(addChannelAll.args[0][0], config);
   t.deepEqual(addChannelAll.args[0][1].options, options);
-  t.deepEqual(addChannelAll.args[0][1].branch, undefined);
-  t.deepEqual(addChannelAll.args[0][1].branches, undefined);
+  t.is(addChannelAll.args[0][1].branch, undefined);
+  t.is(addChannelAll.args[0][1].branches, undefined);
   t.deepEqual(addChannelAll.args[0][1].logger, t.context.logger);
   t.deepEqual(addChannelAll.args[0][1].envCi, envCi);
-  t.deepEqual(addChannelAll.args[0][1].name, undefined);
-  t.deepEqual(addChannelAll.args[0][1].pkg, undefined);
-  t.deepEqual(addChannelAll.args[0][1].pkgs, undefined);
-  t.deepEqual(addChannelAll.args[0][1].rootCwd, undefined);
+  t.is(addChannelAll.args[0][1].name, undefined);
+  t.is(addChannelAll.args[0][1].pkg, undefined);
+  t.is(addChannelAll.args[0][1].pkgs, undefined);
+  t.is(addChannelAll.args[0][1].rootCwd, undefined);
   t.deepEqual(addChannelAll.args[0][1].pkgContexts[name].name, name);
   t.deepEqual(Object.keys(addChannelAll.args[0][1]).sort(), defaultContextKeys);
 
@@ -424,18 +415,18 @@ test('Plugins are called with expected values', async (t) => {
 
   t.deepEqual(successAll.args[0][0], config);
   t.deepEqual(successAll.args[0][1].options, options);
-  t.deepEqual(successAll.args[0][1].branch, undefined);
-  t.deepEqual(successAll.args[0][1].branches, undefined);
+  t.is(successAll.args[0][1].branch, undefined);
+  t.is(successAll.args[0][1].branches, undefined);
   t.deepEqual(successAll.args[0][1].logger, t.context.logger);
   t.deepEqual(successAll.args[0][1].envCi, envCi);
-  t.deepEqual(successAll.args[0][1].name, undefined);
-  t.deepEqual(successAll.args[0][1].pkg, undefined);
-  t.deepEqual(successAll.args[0][1].pkgs, undefined);
-  t.deepEqual(successAll.args[0][1].rootCwd, undefined);
+  t.is(successAll.args[0][1].name, undefined);
+  t.is(successAll.args[0][1].pkg, undefined);
+  t.is(successAll.args[0][1].pkgs, undefined);
+  t.is(successAll.args[0][1].rootCwd, undefined);
   t.deepEqual(successAll.args[0][1].pkgContexts[name].name, name);
   t.deepEqual(Object.keys(successAll.args[0][1]).sort(), defaultContextKeys);
 
-  pkgContextKeys = pkgContextKeys.filter(item => item !== 'nextRelease');
+  pkgContextKeys = pkgContextKeys.filter((item) => item !== 'nextRelease');
   pkgContextKeys.sort();
 
   t.is(analyzeCommits.callCount, 1);
@@ -457,14 +448,14 @@ test('Plugins are called with expected values', async (t) => {
 
   t.deepEqual(analyzeCommitsAll.args[0][0], config);
   t.deepEqual(analyzeCommitsAll.args[0][1].options, options);
-  t.deepEqual(analyzeCommitsAll.args[0][1].branch, undefined);
-  t.deepEqual(analyzeCommitsAll.args[0][1].branches, undefined);
+  t.is(analyzeCommitsAll.args[0][1].branch, undefined);
+  t.is(analyzeCommitsAll.args[0][1].branches, undefined);
   t.deepEqual(analyzeCommitsAll.args[0][1].logger, t.context.logger);
   t.deepEqual(analyzeCommitsAll.args[0][1].envCi, envCi);
-  t.deepEqual(analyzeCommitsAll.args[0][1].name, undefined);
-  t.deepEqual(analyzeCommitsAll.args[0][1].pkg, undefined);
-  t.deepEqual(analyzeCommitsAll.args[0][1].pkgs, undefined);
-  t.deepEqual(analyzeCommitsAll.args[0][1].rootCwd, undefined);
+  t.is(analyzeCommitsAll.args[0][1].name, undefined);
+  t.is(analyzeCommitsAll.args[0][1].pkg, undefined);
+  t.is(analyzeCommitsAll.args[0][1].pkgs, undefined);
+  t.is(analyzeCommitsAll.args[0][1].rootCwd, undefined);
   t.deepEqual(analyzeCommitsAll.args[0][1].pkgContexts[name].name, name);
   t.deepEqual(Object.keys(analyzeCommitsAll.args[0][1]).sort(), defaultContextKeys);
 
@@ -491,14 +482,14 @@ test('Plugins are called with expected values', async (t) => {
 
   t.deepEqual(verifyReleaseAll.args[0][0], config);
   t.deepEqual(verifyReleaseAll.args[0][1].options, options);
-  t.deepEqual(verifyReleaseAll.args[0][1].branch, undefined);
-  t.deepEqual(verifyReleaseAll.args[0][1].branches, undefined);
+  t.is(verifyReleaseAll.args[0][1].branch, undefined);
+  t.is(verifyReleaseAll.args[0][1].branches, undefined);
   t.deepEqual(verifyReleaseAll.args[0][1].logger, t.context.logger);
   t.deepEqual(verifyReleaseAll.args[0][1].envCi, envCi);
-  t.deepEqual(verifyReleaseAll.args[0][1].name, undefined);
-  t.deepEqual(verifyReleaseAll.args[0][1].pkg, undefined);
-  t.deepEqual(verifyReleaseAll.args[0][1].pkgs, undefined);
-  t.deepEqual(verifyReleaseAll.args[0][1].rootCwd, undefined);
+  t.is(verifyReleaseAll.args[0][1].name, undefined);
+  t.is(verifyReleaseAll.args[0][1].pkg, undefined);
+  t.is(verifyReleaseAll.args[0][1].pkgs, undefined);
+  t.is(verifyReleaseAll.args[0][1].rootCwd, undefined);
   t.deepEqual(verifyReleaseAll.args[0][1].pkgContexts[name].name, name);
   t.deepEqual(Object.keys(verifyReleaseAll.args[0][1]).sort(), defaultContextKeys);
 
@@ -555,14 +546,14 @@ test('Plugins are called with expected values', async (t) => {
 
   t.deepEqual(generateNotesAll.args[1][0], config);
   t.deepEqual(generateNotesAll.args[1][1].options, options);
-  t.deepEqual(generateNotesAll.args[1][1].branch, undefined);
-  t.deepEqual(generateNotesAll.args[1][1].branches, undefined);
+  t.is(generateNotesAll.args[1][1].branch, undefined);
+  t.is(generateNotesAll.args[1][1].branches, undefined);
   t.deepEqual(generateNotesAll.args[1][1].logger, t.context.logger);
   t.deepEqual(generateNotesAll.args[1][1].envCi, envCi);
-  t.deepEqual(generateNotesAll.args[1][1].name, undefined);
-  t.deepEqual(generateNotesAll.args[1][1].pkg, undefined);
-  t.deepEqual(generateNotesAll.args[1][1].pkgs, undefined);
-  t.deepEqual(generateNotesAll.args[1][1].rootCwd, undefined);
+  t.is(generateNotesAll.args[1][1].name, undefined);
+  t.is(generateNotesAll.args[1][1].pkg, undefined);
+  t.is(generateNotesAll.args[1][1].pkgs, undefined);
+  t.is(generateNotesAll.args[1][1].rootCwd, undefined);
   t.deepEqual(generateNotesAll.args[1][1].pkgContexts[name].name, name);
   t.deepEqual(Object.keys(generateNotesAll.args[1][1]).sort(), defaultContextKeys);
 
@@ -586,14 +577,14 @@ test('Plugins are called with expected values', async (t) => {
 
   t.deepEqual(prepareAll.args[0][0], config);
   t.deepEqual(prepareAll.args[0][1].options, options);
-  t.deepEqual(prepareAll.args[0][1].branch, undefined);
-  t.deepEqual(prepareAll.args[0][1].branches, undefined);
+  t.is(prepareAll.args[0][1].branch, undefined);
+  t.is(prepareAll.args[0][1].branches, undefined);
   t.deepEqual(prepareAll.args[0][1].logger, t.context.logger);
   t.deepEqual(prepareAll.args[0][1].envCi, envCi);
-  t.deepEqual(prepareAll.args[0][1].name, undefined);
-  t.deepEqual(prepareAll.args[0][1].pkg, undefined);
-  t.deepEqual(prepareAll.args[0][1].pkgs, undefined);
-  t.deepEqual(prepareAll.args[0][1].rootCwd, undefined);
+  t.is(prepareAll.args[0][1].name, undefined);
+  t.is(prepareAll.args[0][1].pkg, undefined);
+  t.is(prepareAll.args[0][1].pkgs, undefined);
+  t.is(prepareAll.args[0][1].rootCwd, undefined);
   t.deepEqual(prepareAll.args[0][1].pkgContexts[name].name, name);
   t.deepEqual(Object.keys(prepareAll.args[0][1]).sort(), defaultContextKeys);
 
@@ -617,14 +608,14 @@ test('Plugins are called with expected values', async (t) => {
 
   t.deepEqual(publishAll.args[0][0], config);
   t.deepEqual(publishAll.args[0][1].options, options);
-  t.deepEqual(publishAll.args[0][1].branch, undefined);
-  t.deepEqual(publishAll.args[0][1].branches, undefined);
+  t.is(publishAll.args[0][1].branch, undefined);
+  t.is(publishAll.args[0][1].branches, undefined);
   t.deepEqual(publishAll.args[0][1].logger, t.context.logger);
   t.deepEqual(publishAll.args[0][1].envCi, envCi);
-  t.deepEqual(publishAll.args[0][1].name, undefined);
-  t.deepEqual(publishAll.args[0][1].pkg, undefined);
-  t.deepEqual(publishAll.args[0][1].pkgs, undefined);
-  t.deepEqual(publishAll.args[0][1].rootCwd, undefined);
+  t.is(publishAll.args[0][1].name, undefined);
+  t.is(publishAll.args[0][1].pkg, undefined);
+  t.is(publishAll.args[0][1].pkgs, undefined);
+  t.is(publishAll.args[0][1].rootCwd, undefined);
   t.deepEqual(publishAll.args[0][1].pkgContexts[name].name, name);
   t.deepEqual(Object.keys(publishAll.args[0][1]).sort(), defaultContextKeys);
 
@@ -649,14 +640,14 @@ test('Plugins are called with expected values', async (t) => {
 
   t.deepEqual(successAll.args[1][0], config);
   t.deepEqual(successAll.args[1][1].options, options);
-  t.deepEqual(successAll.args[1][1].branch, undefined);
-  t.deepEqual(successAll.args[1][1].branches, undefined);
+  t.is(successAll.args[1][1].branch, undefined);
+  t.is(successAll.args[1][1].branches, undefined);
   t.deepEqual(successAll.args[1][1].logger, t.context.logger);
   t.deepEqual(successAll.args[1][1].envCi, envCi);
-  t.deepEqual(successAll.args[1][1].name, undefined);
-  t.deepEqual(successAll.args[1][1].pkg, undefined);
-  t.deepEqual(successAll.args[1][1].pkgs, undefined);
-  t.deepEqual(successAll.args[1][1].rootCwd, undefined);
+  t.is(successAll.args[1][1].name, undefined);
+  t.is(successAll.args[1][1].pkg, undefined);
+  t.is(successAll.args[1][1].pkgs, undefined);
+  t.is(successAll.args[1][1].rootCwd, undefined);
   t.deepEqual(successAll.args[1][1].pkgContexts[name].name, name);
   t.deepEqual(Object.keys(successAll.args[1][1]).sort(), defaultContextKeys);
 
@@ -1217,7 +1208,13 @@ test('Log all "verifyConditions" errors', async (t) => {
   const error2 = new SemanticReleaseError('error 2', 'ERR2');
   const error3 = new SemanticReleaseError('error 3', 'ERR3');
   const fail = stub().resolves();
-  const config = {branches: [{name: 'master'}], repositoryUrl, tagFormat: `v\${version}`, monorepo: false, packages: ['.']};
+  const config = {
+    branches: [{name: 'master'}],
+    repositoryUrl,
+    tagFormat: `v\${version}`,
+    monorepo: false,
+    packages: ['.'],
+  };
   const options = {
     ...config,
     plugins: false,
@@ -1266,7 +1263,7 @@ test('Log all "verifyRelease" errors', async (t) => {
     repositoryUrl,
     tagFormat: `v\${version}`,
     monorepo: false,
-    packages: ['.']
+    packages: ['.'],
   };
   const options = {
     ...config,
@@ -2238,7 +2235,7 @@ test('Get all commits including the ones not in the shallow clone', async (t) =>
   t.is(analyzeCommits.args[0][1].commits.length, 3);
 });
 
-test('Push tag before publish', async t => {
+test('Push tag before publish', async (t) => {
   const {cwd, repositoryUrl} = await gitRepo(true);
   await gitCommits(['feat: initial release'], {cwd});
   await gitTagVersion('v1.0.0', undefined, {cwd});
@@ -2271,6 +2268,6 @@ test('Push tag before publish', async t => {
   });
   await semanticRelease(options, {cwd, stdout: new WritableStreamBuffer(), stderr: new WritableStreamBuffer()});
 
-  t.is(prepareTagHead, undefined)
+  t.is(prepareTagHead, undefined);
   t.truthy(isString(publishTagHead));
 });
