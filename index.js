@@ -86,6 +86,7 @@ const steps = {
     }
   },
   releaseToAddGenerateNotes: {
+    name: 'generateNotes',
     process: async (context, plugins) => {
       const {cwd, rootCwd, env, options, logger, pkg} = context;
 
@@ -141,7 +142,6 @@ const steps = {
         logger.success('Push to', options.repositoryUrl);
       }
     },
-    processAll: false,
   },
   addChannel: {
     process: async (context, plugins) => {
@@ -167,6 +167,7 @@ const steps = {
     }
   },
   addChannelSuccess: {
+    name: 'success',
     process: async (context, plugins) => {
       if (!context.releaseToAdd) {
         return;
@@ -177,7 +178,6 @@ const steps = {
       const releases = context.newReleases;
       await plugins.success({...context, lastRelease, commits, nextRelease, releases});
     },
-    processAll: false,
   },
   analyzeCommits: {
     process: async (context, plugins) => {
@@ -411,7 +411,7 @@ async function runSteps(context, pkgContexts, plugins, steps) {
 
     let allResults = [];
     if (step.processAll !== false) {
-      allResults = await plugins[name + 'All'](context);
+      allResults = await plugins[(step.name || name) + 'All'](context);
     }
 
     if (step.postprocessAll) {
