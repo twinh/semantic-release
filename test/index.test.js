@@ -2237,3 +2237,40 @@ test('Get all commits including the ones not in the shallow clone', async (t) =>
 
   t.is(analyzeCommits.args[0][1].commits.length, 3);
 });
+
+test('Push tag before publish', async t => {
+  const {cwd, repositoryUrl} = await gitRepo(true);
+  await gitCommits(['feat: initial release'], {cwd});
+  await gitTagVersion('v1.0.0', undefined, {cwd});
+  await gitCommits(['feat: new feature'], {cwd});
+  await gitPush(repositoryUrl, 'master', {cwd});
+
+  let prepareTagHead;
+  let publishTagHead;
+
+  const options = {
+    branch: 'master',
+    repositoryUrl,
+    verifyConditions: false,
+    verifyRelease: false,
+    prepare: async () => {
+      prepareTagHead = await gitRemoteTagHead(repositoryUrl, 'v1.1.0', {cwd});
+    },
+    generateNotes: false,
+    publish: async () => {
+      publishTagHead = await gitRemoteTagHead(repositoryUrl, 'v1.1.0', {cwd});
+    },
+    addChannel: false,
+    success: false,
+    fail: stub().resolves(),
+  };
+
+  const semanticRelease = requireNoCache('..', {
+    './lib/get-logger': () => t.context.logger,
+    'env-ci': () => ({isCi: true, branch: 'master', isPr: false}),
+  });
+  await semanticRelease(options, {cwd, stdout: new WritableStreamBuffer(), stderr: new WritableStreamBuffer()});
+
+  t.is(prepareTagHead, undefined)
+  t.truthy(isString(publishTagHead));
+});

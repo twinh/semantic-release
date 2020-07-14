@@ -275,8 +275,8 @@ const steps = {
       await plugins.prepare(context);
     }
   },
-  publish: {
-    process: async (context, plugins) => {
+  createTag: {
+    process: async (context) => {
       const {cwd, env, options, logger, nextRelease} = context;
 
       if (canTag(context)) {
@@ -291,10 +291,6 @@ const steps = {
       } else {
         logger.log('Skip rest tags on fixed version mode.');
       }
-
-      const releases = await plugins.publish(context);
-      context.newReleases = releases;
-      context.releases.push(...releases);
     },
     preprocessAll: async (context) => {
       const {cwd, env, options, logger} = context;
@@ -304,6 +300,14 @@ const steps = {
         await pushNotes(options.repositoryUrl, {cwd, env});
         logger.success(`Push to ${options.repositoryUrl}`);
       }
+    },
+    processAll: false,
+  },
+  publish: {
+    process: async (context, plugins) => {
+      const releases = await plugins.publish(context);
+      context.newReleases = releases;
+      context.releases.push(...releases);
     }
   },
   success: {
