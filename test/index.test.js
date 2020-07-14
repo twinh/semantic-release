@@ -75,17 +75,26 @@ test('Plugins are called with expected values', async (t) => {
   const notes3 = 'Release notes 3';
   const verifyConditions1 = stub().resolves();
   const verifyConditions2 = stub().resolves();
+  const verifyConditionsAll = stub().resolves();
   const analyzeCommits = stub().resolves(nextRelease.type);
+  const analyzeCommitsAll = stub().resolves();
   const verifyRelease = stub().resolves();
+  const verifyReleaseAll = stub().resolves();
   const generateNotes1 = stub().resolves(notes1);
   const generateNotes2 = stub().resolves(notes2);
   const generateNotes3 = stub().resolves(notes3);
+  const generateNotesAll = stub().resolves(notes1);
   const release1 = {name: 'Release 1', url: 'https://release1.com'};
   const release2 = {name: 'Release 2', url: 'https://release2.com'};
   const addChannel = stub().resolves(release1);
+  const addChannelAll = stub().resolves();
   const prepare = stub().resolves();
+  const prepareAll = stub().resolves();
   const publish = stub().resolves(release2);
+  const publishAll = stub().resolves();
   const success = stub().resolves();
+  const successAll = stub().resolves();
+
   const env = {};
   const config = {
     branches: [{name: 'master'}, {name: 'next'}],
@@ -120,15 +129,54 @@ test('Plugins are called with expected values', async (t) => {
     ...config,
     plugins: false,
     verifyConditions: [verifyConditions1, verifyConditions2],
+    verifyConditionsAll,
     analyzeCommits,
+    analyzeCommitsAll,
     verifyRelease,
+    verifyReleaseAll,
     addChannel,
+    addChannelAll,
     generateNotes: [generateNotes1, generateNotes2, generateNotes3],
+    generateNotesAll,
     prepare,
+    prepareAll,
     publish: [publish, pluginNoop],
+    publishAll,
     success,
+    successAll,
   };
   const envCi = {branch: 'master', isCi: true, isPr: false};
+  const name = '.';
+  const pkg = {name, path: '.'};
+  const pkgs = {[name]: pkg};
+  const rootCwd = cwd;
+
+  const defaultContextKeys = [
+    'cwd',
+    'env',
+    'envCi',
+    'options',
+    'pkgContexts',
+    'stdout',
+    'stderr',
+    'logger',
+  ].sort();
+  let pkgContextKeys = [
+    'cwd',
+    'env',
+    'envCi',
+    'options',
+    'pkg',
+    'pkgs',
+    'name',
+    'rootCwd',
+    'pkgContexts',
+    'branches',
+    'branch',
+    'stdout',
+    'stderr',
+    'logger'
+  ].sort();
 
   const releases = [
     {
@@ -164,6 +212,13 @@ test('Plugins are called with expected values', async (t) => {
   t.deepEqual(verifyConditions1.args[0][1].branches, branches);
   t.deepEqual(verifyConditions1.args[0][1].logger, t.context.logger);
   t.deepEqual(verifyConditions1.args[0][1].envCi, envCi);
+  t.deepEqual(verifyConditions1.args[0][1].name, name);
+  t.deepEqual(verifyConditions1.args[0][1].pkg, pkg);
+  t.deepEqual(verifyConditions1.args[0][1].pkgs, pkgs);
+  t.deepEqual(verifyConditions1.args[0][1].rootCwd, rootCwd);
+  t.deepEqual(verifyConditions1.args[0][1].pkgContexts[name].name, name);
+  t.deepEqual(Object.keys(verifyConditions1.args[0][1]).sort(), pkgContextKeys);
+
   t.is(verifyConditions2.callCount, 1);
   t.deepEqual(verifyConditions2.args[0][0], config);
   t.deepEqual(verifyConditions2.args[0][1].cwd, cwd);
@@ -172,6 +227,30 @@ test('Plugins are called with expected values', async (t) => {
   t.deepEqual(verifyConditions2.args[0][1].branches, branches);
   t.deepEqual(verifyConditions2.args[0][1].logger, t.context.logger);
   t.deepEqual(verifyConditions2.args[0][1].envCi, envCi);
+  t.deepEqual(verifyConditions2.args[0][1].name, name);
+  t.deepEqual(verifyConditions2.args[0][1].pkg, pkg);
+  t.deepEqual(verifyConditions2.args[0][1].pkgs, pkgs);
+  t.deepEqual(verifyConditions2.args[0][1].rootCwd, rootCwd);
+  t.deepEqual(verifyConditions2.args[0][1].pkgContexts[name].name, name);
+  t.deepEqual(Object.keys(verifyConditions2.args[0][1]).sort(), pkgContextKeys);
+
+  t.is(verifyConditionsAll.callCount, 1);
+  t.deepEqual(verifyConditionsAll.args[0][0], config);
+  t.deepEqual(verifyConditionsAll.args[0][1].cwd, cwd);
+  t.deepEqual(verifyConditionsAll.args[0][1].options, options);
+  t.deepEqual(verifyConditionsAll.args[0][1].branch, undefined);
+  t.deepEqual(verifyConditionsAll.args[0][1].branches, undefined);
+  t.deepEqual(verifyConditionsAll.args[0][1].logger, t.context.logger);
+  t.deepEqual(verifyConditionsAll.args[0][1].envCi, envCi);
+  t.deepEqual(verifyConditionsAll.args[0][1].name, undefined);
+  t.deepEqual(verifyConditionsAll.args[0][1].pkg, undefined);
+  t.deepEqual(verifyConditionsAll.args[0][1].pkgs, undefined);
+  t.deepEqual(verifyConditionsAll.args[0][1].rootCwd, undefined);
+  t.deepEqual(verifyConditionsAll.args[0][1].pkgContexts[name].name, name);
+  t.deepEqual(Object.keys(verifyConditionsAll.args[0][1]).sort(), defaultContextKeys);
+
+  pkgContextKeys.push('commits', 'lastRelease', 'nextRelease', 'releases', 'result');
+  pkgContextKeys.sort();
 
   t.is(generateNotes1.callCount, 2);
   t.is(generateNotes2.callCount, 2);
@@ -193,7 +272,13 @@ test('Plugins are called with expected values', async (t) => {
     gitTag: 'v1.0.0',
     name: 'v1.0.0',
   });
-  t.deepEqual(generateNotes2.args[0][1].envCi, envCi);
+  t.deepEqual(generateNotes1.args[0][1].envCi, envCi);
+  t.deepEqual(generateNotes1.args[0][1].name, name);
+  t.deepEqual(generateNotes1.args[0][1].pkg, pkg);
+  t.deepEqual(generateNotes1.args[0][1].pkgs, pkgs);
+  t.deepEqual(generateNotes1.args[0][1].rootCwd, rootCwd);
+  t.deepEqual(generateNotes1.args[0][1].pkgContexts[name].name, name);
+  t.deepEqual(Object.keys(generateNotes1.args[0][1]).sort(), pkgContextKeys);
 
   t.deepEqual(generateNotes2.args[0][0], config);
   t.deepEqual(generateNotes2.args[0][1].options, options);
@@ -213,6 +298,12 @@ test('Plugins are called with expected values', async (t) => {
     notes: notes1,
   });
   t.deepEqual(generateNotes2.args[0][1].envCi, envCi);
+  t.deepEqual(generateNotes2.args[0][1].name, name);
+  t.deepEqual(generateNotes2.args[0][1].pkg, pkg);
+  t.deepEqual(generateNotes2.args[0][1].pkgs, pkgs);
+  t.deepEqual(generateNotes2.args[0][1].rootCwd, rootCwd);
+  t.deepEqual(generateNotes2.args[0][1].pkgContexts[name].name, name);
+  t.deepEqual(Object.keys(generateNotes2.args[0][1]).sort(), pkgContextKeys);
 
   t.deepEqual(generateNotes3.args[0][0], config);
   t.deepEqual(generateNotes3.args[0][1].options, options);
@@ -232,6 +323,25 @@ test('Plugins are called with expected values', async (t) => {
     notes: `${notes1}\n\n${notes2}`,
   });
   t.deepEqual(generateNotes3.args[0][1].envCi, envCi);
+  t.deepEqual(generateNotes3.args[0][1].name, name);
+  t.deepEqual(generateNotes3.args[0][1].pkg, pkg);
+  t.deepEqual(generateNotes3.args[0][1].pkgs, pkgs);
+  t.deepEqual(generateNotes3.args[0][1].rootCwd, rootCwd);
+  t.deepEqual(generateNotes3.args[0][1].pkgContexts[name].name, name);
+  t.deepEqual(Object.keys(generateNotes3.args[0][1]).sort(), pkgContextKeys);
+
+  t.deepEqual(generateNotesAll.args[0][0], config);
+  t.deepEqual(generateNotesAll.args[0][1].options, options);
+  t.deepEqual(generateNotesAll.args[0][1].branch, undefined);
+  t.deepEqual(generateNotesAll.args[0][1].branches, undefined);
+  t.deepEqual(generateNotesAll.args[0][1].logger, t.context.logger);
+  t.deepEqual(generateNotesAll.args[0][1].envCi, envCi);
+  t.deepEqual(generateNotesAll.args[0][1].name, undefined);
+  t.deepEqual(generateNotesAll.args[0][1].pkg, undefined);
+  t.deepEqual(generateNotesAll.args[0][1].pkgs, undefined);
+  t.deepEqual(generateNotesAll.args[0][1].rootCwd, undefined);
+  t.deepEqual(generateNotesAll.args[0][1].pkgContexts[name].name, name);
+  t.deepEqual(Object.keys(generateNotesAll.args[0][1]).sort(), defaultContextKeys);
 
   branch.tags.push({
     version: '1.0.0',
@@ -239,6 +349,9 @@ test('Plugins are called with expected values', async (t) => {
     gitTag: 'v1.0.0',
     gitHead: commits[commits.length - 1].hash,
   });
+
+  pkgContextKeys.push('releaseToAdd');
+  pkgContextKeys.sort();
 
   t.is(addChannel.callCount, 1);
   t.deepEqual(addChannel.args[0][0], config);
@@ -260,88 +373,16 @@ test('Plugins are called with expected values', async (t) => {
   t.deepEqual(addChannel.args[0][1].commits[0].hash, commits[1].hash);
   t.deepEqual(addChannel.args[0][1].commits[0].message, commits[1].message);
   t.deepEqual(addChannel.args[0][1].envCi, envCi);
+  t.deepEqual(addChannel.args[0][1].name, name);
+  t.deepEqual(addChannel.args[0][1].pkg, pkg);
+  t.deepEqual(addChannel.args[0][1].pkgs, pkgs);
+  t.deepEqual(addChannel.args[0][1].rootCwd, rootCwd);
+  t.deepEqual(addChannel.args[0][1].pkgContexts[name].name, name);
+  t.deepEqual(Object.keys(addChannel.args[0][1]).sort(), pkgContextKeys.concat('currentRelease').sort());
 
-  t.is(analyzeCommits.callCount, 1);
-  t.deepEqual(analyzeCommits.args[0][0], config);
-  t.deepEqual(analyzeCommits.args[0][1].options, options);
-  t.deepEqual(analyzeCommits.args[0][1].branch, branch);
-  t.deepEqual(analyzeCommits.args[0][1].branches, branches);
-  t.deepEqual(analyzeCommits.args[0][1].logger, t.context.logger);
-  t.deepEqual(analyzeCommits.args[0][1].lastRelease, lastRelease);
-  t.deepEqual(analyzeCommits.args[0][1].commits[0].hash, commits[0].hash);
-  t.deepEqual(analyzeCommits.args[0][1].commits[0].message, commits[0].message);
-  t.deepEqual(analyzeCommits.args[0][1].envCi, envCi);
+  pkgContextKeys.push('newReleases');
+  pkgContextKeys.sort();
 
-  t.is(verifyRelease.callCount, 1);
-  t.deepEqual(verifyRelease.args[0][0], config);
-  t.deepEqual(verifyRelease.args[0][1].options, options);
-  t.deepEqual(verifyRelease.args[0][1].branch, branch);
-  t.deepEqual(verifyRelease.args[0][1].branches, branches);
-  t.deepEqual(verifyRelease.args[0][1].logger, t.context.logger);
-  t.deepEqual(verifyRelease.args[0][1].lastRelease, lastRelease);
-  t.deepEqual(verifyRelease.args[0][1].commits[0].hash, commits[0].hash);
-  t.deepEqual(verifyRelease.args[0][1].commits[0].message, commits[0].message);
-  t.deepEqual(verifyRelease.args[0][1].nextRelease, nextRelease);
-  t.deepEqual(verifyRelease.args[0][1].envCi, envCi);
-
-  t.deepEqual(generateNotes1.args[1][0], config);
-  t.deepEqual(generateNotes1.args[1][1].options, options);
-  t.deepEqual(generateNotes1.args[1][1].branch, branch);
-  t.deepEqual(generateNotes1.args[1][1].branches, branches);
-  t.deepEqual(generateNotes1.args[1][1].logger, t.context.logger);
-  t.deepEqual(generateNotes1.args[1][1].lastRelease, lastRelease);
-  t.deepEqual(generateNotes1.args[1][1].commits[0].hash, commits[0].hash);
-  t.deepEqual(generateNotes1.args[1][1].commits[0].message, commits[0].message);
-  t.deepEqual(generateNotes1.args[1][1].nextRelease, nextRelease);
-  t.deepEqual(generateNotes1.args[1][1].envCi, envCi);
-
-  t.deepEqual(generateNotes2.args[1][0], config);
-  t.deepEqual(generateNotes2.args[1][1].options, options);
-  t.deepEqual(generateNotes2.args[1][1].branch, branch);
-  t.deepEqual(generateNotes2.args[1][1].branches, branches);
-  t.deepEqual(generateNotes2.args[1][1].logger, t.context.logger);
-  t.deepEqual(generateNotes2.args[1][1].lastRelease, lastRelease);
-  t.deepEqual(generateNotes2.args[1][1].commits[0].hash, commits[0].hash);
-  t.deepEqual(generateNotes2.args[1][1].commits[0].message, commits[0].message);
-  t.deepEqual(generateNotes2.args[1][1].nextRelease, {...nextRelease, notes: notes1});
-  t.deepEqual(generateNotes2.args[1][1].envCi, envCi);
-
-  t.deepEqual(generateNotes3.args[1][0], config);
-  t.deepEqual(generateNotes3.args[1][1].options, options);
-  t.deepEqual(generateNotes3.args[1][1].branch, branch);
-  t.deepEqual(generateNotes3.args[1][1].branches, branches);
-  t.deepEqual(generateNotes3.args[1][1].logger, t.context.logger);
-  t.deepEqual(generateNotes3.args[1][1].lastRelease, lastRelease);
-  t.deepEqual(generateNotes3.args[1][1].commits[0].hash, commits[0].hash);
-  t.deepEqual(generateNotes3.args[1][1].commits[0].message, commits[0].message);
-  t.deepEqual(generateNotes3.args[1][1].nextRelease, {...nextRelease, notes: `${notes1}\n\n${notes2}`});
-  t.deepEqual(generateNotes3.args[1][1].envCi, envCi);
-
-  t.is(prepare.callCount, 1);
-  t.deepEqual(prepare.args[0][0], config);
-  t.deepEqual(prepare.args[0][1].options, options);
-  t.deepEqual(prepare.args[0][1].branch, branch);
-  t.deepEqual(prepare.args[0][1].branches, branches);
-  t.deepEqual(prepare.args[0][1].logger, t.context.logger);
-  t.deepEqual(prepare.args[0][1].lastRelease, lastRelease);
-  t.deepEqual(prepare.args[0][1].commits[0].hash, commits[0].hash);
-  t.deepEqual(prepare.args[0][1].commits[0].message, commits[0].message);
-  t.deepEqual(prepare.args[0][1].nextRelease, {...nextRelease, notes: `${notes1}\n\n${notes2}\n\n${notes3}`});
-  t.deepEqual(prepare.args[0][1].envCi, envCi);
-
-  t.is(publish.callCount, 1);
-  t.deepEqual(publish.args[0][0], config);
-  t.deepEqual(publish.args[0][1].options, options);
-  t.deepEqual(publish.args[0][1].branch, branch);
-  t.deepEqual(publish.args[0][1].branches, branches);
-  t.deepEqual(publish.args[0][1].logger, t.context.logger);
-  t.deepEqual(publish.args[0][1].lastRelease, lastRelease);
-  t.deepEqual(publish.args[0][1].commits[0].hash, commits[0].hash);
-  t.deepEqual(publish.args[0][1].commits[0].message, commits[0].message);
-  t.deepEqual(publish.args[0][1].nextRelease, {...nextRelease, notes: `${notes1}\n\n${notes2}\n\n${notes3}`});
-  t.deepEqual(publish.args[0][1].envCi, envCi);
-
-  t.is(success.callCount, 2);
   t.deepEqual(success.args[0][0], config);
   t.deepEqual(success.args[0][1].options, options);
   t.deepEqual(success.args[0][1].branch, branch);
@@ -361,7 +402,142 @@ test('Plugins are called with expected values', async (t) => {
   });
   t.deepEqual(success.args[0][1].releases, [releases[0]]);
   t.deepEqual(success.args[0][1].envCi, envCi);
+  t.deepEqual(success.args[0][1].name, name);
+  t.deepEqual(success.args[0][1].pkg, pkg);
+  t.deepEqual(success.args[0][1].pkgs, pkgs);
+  t.deepEqual(success.args[0][1].rootCwd, rootCwd);
+  t.deepEqual(success.args[0][1].pkgContexts[name].name, name);
+  t.deepEqual(Object.keys(success.args[0][1]).sort(), pkgContextKeys);
 
+  pkgContextKeys = pkgContextKeys.filter(item => item !== 'nextRelease');
+  pkgContextKeys.sort();
+
+  t.is(analyzeCommits.callCount, 1);
+  t.deepEqual(analyzeCommits.args[0][0], config);
+  t.deepEqual(analyzeCommits.args[0][1].options, options);
+  t.deepEqual(analyzeCommits.args[0][1].branch, branch);
+  t.deepEqual(analyzeCommits.args[0][1].branches, branches);
+  t.deepEqual(analyzeCommits.args[0][1].logger, t.context.logger);
+  t.deepEqual(analyzeCommits.args[0][1].lastRelease, lastRelease);
+  t.deepEqual(analyzeCommits.args[0][1].commits[0].hash, commits[0].hash);
+  t.deepEqual(analyzeCommits.args[0][1].commits[0].message, commits[0].message);
+  t.deepEqual(analyzeCommits.args[0][1].envCi, envCi);
+  t.deepEqual(analyzeCommits.args[0][1].name, name);
+  t.deepEqual(analyzeCommits.args[0][1].pkg, pkg);
+  t.deepEqual(analyzeCommits.args[0][1].pkgs, pkgs);
+  t.deepEqual(analyzeCommits.args[0][1].rootCwd, rootCwd);
+  t.deepEqual(analyzeCommits.args[0][1].pkgContexts[name].name, name);
+  t.deepEqual(Object.keys(analyzeCommits.args[0][1]).sort(), pkgContextKeys);
+
+  pkgContextKeys.push('nextRelease', 'nextReleaseType');
+  pkgContextKeys.sort();
+
+  t.is(verifyRelease.callCount, 1);
+  t.deepEqual(verifyRelease.args[0][0], config);
+  t.deepEqual(verifyRelease.args[0][1].options, options);
+  t.deepEqual(verifyRelease.args[0][1].branch, branch);
+  t.deepEqual(verifyRelease.args[0][1].branches, branches);
+  t.deepEqual(verifyRelease.args[0][1].logger, t.context.logger);
+  t.deepEqual(verifyRelease.args[0][1].lastRelease, lastRelease);
+  t.deepEqual(verifyRelease.args[0][1].commits[0].hash, commits[0].hash);
+  t.deepEqual(verifyRelease.args[0][1].commits[0].message, commits[0].message);
+  t.deepEqual(verifyRelease.args[0][1].nextRelease, nextRelease);
+  t.deepEqual(verifyRelease.args[0][1].envCi, envCi);
+  t.deepEqual(verifyRelease.args[0][1].name, name);
+  t.deepEqual(verifyRelease.args[0][1].pkg, pkg);
+  t.deepEqual(verifyRelease.args[0][1].pkgs, pkgs);
+  t.deepEqual(verifyRelease.args[0][1].rootCwd, rootCwd);
+  t.deepEqual(verifyRelease.args[0][1].pkgContexts[name].name, name);
+  t.deepEqual(Object.keys(verifyRelease.args[0][1]).sort(), pkgContextKeys);
+
+  t.deepEqual(generateNotes1.args[1][0], config);
+  t.deepEqual(generateNotes1.args[1][1].options, options);
+  t.deepEqual(generateNotes1.args[1][1].branch, branch);
+  t.deepEqual(generateNotes1.args[1][1].branches, branches);
+  t.deepEqual(generateNotes1.args[1][1].logger, t.context.logger);
+  t.deepEqual(generateNotes1.args[1][1].lastRelease, lastRelease);
+  t.deepEqual(generateNotes1.args[1][1].commits[0].hash, commits[0].hash);
+  t.deepEqual(generateNotes1.args[1][1].commits[0].message, commits[0].message);
+  t.deepEqual(generateNotes1.args[1][1].nextRelease, nextRelease);
+  t.deepEqual(generateNotes1.args[1][1].envCi, envCi);
+  t.deepEqual(generateNotes1.args[1][1].name, name);
+  t.deepEqual(generateNotes1.args[1][1].pkg, pkg);
+  t.deepEqual(generateNotes1.args[1][1].pkgs, pkgs);
+  t.deepEqual(generateNotes1.args[1][1].rootCwd, rootCwd);
+  t.deepEqual(generateNotes1.args[1][1].pkgContexts[name].name, name);
+  t.deepEqual(Object.keys(generateNotes1.args[1][1]).sort(), pkgContextKeys);
+
+  t.deepEqual(generateNotes2.args[1][0], config);
+  t.deepEqual(generateNotes2.args[1][1].options, options);
+  t.deepEqual(generateNotes2.args[1][1].branch, branch);
+  t.deepEqual(generateNotes2.args[1][1].branches, branches);
+  t.deepEqual(generateNotes2.args[1][1].logger, t.context.logger);
+  t.deepEqual(generateNotes2.args[1][1].lastRelease, lastRelease);
+  t.deepEqual(generateNotes2.args[1][1].commits[0].hash, commits[0].hash);
+  t.deepEqual(generateNotes2.args[1][1].commits[0].message, commits[0].message);
+  t.deepEqual(generateNotes2.args[1][1].nextRelease, {...nextRelease, notes: notes1});
+  t.deepEqual(generateNotes2.args[1][1].envCi, envCi);
+  t.deepEqual(generateNotes2.args[1][1].name, name);
+  t.deepEqual(generateNotes2.args[1][1].pkg, pkg);
+  t.deepEqual(generateNotes2.args[1][1].pkgs, pkgs);
+  t.deepEqual(generateNotes2.args[1][1].rootCwd, rootCwd);
+  t.deepEqual(generateNotes2.args[1][1].pkgContexts[name].name, name);
+  t.deepEqual(Object.keys(generateNotes2.args[1][1]).sort(), pkgContextKeys);
+
+  t.deepEqual(generateNotes3.args[1][0], config);
+  t.deepEqual(generateNotes3.args[1][1].options, options);
+  t.deepEqual(generateNotes3.args[1][1].branch, branch);
+  t.deepEqual(generateNotes3.args[1][1].branches, branches);
+  t.deepEqual(generateNotes3.args[1][1].logger, t.context.logger);
+  t.deepEqual(generateNotes3.args[1][1].lastRelease, lastRelease);
+  t.deepEqual(generateNotes3.args[1][1].commits[0].hash, commits[0].hash);
+  t.deepEqual(generateNotes3.args[1][1].commits[0].message, commits[0].message);
+  t.deepEqual(generateNotes3.args[1][1].nextRelease, {...nextRelease, notes: `${notes1}\n\n${notes2}`});
+  t.deepEqual(generateNotes3.args[1][1].envCi, envCi);
+  t.deepEqual(generateNotes3.args[1][1].name, name);
+  t.deepEqual(generateNotes3.args[1][1].pkg, pkg);
+  t.deepEqual(generateNotes3.args[1][1].pkgs, pkgs);
+  t.deepEqual(generateNotes3.args[1][1].rootCwd, rootCwd);
+  t.deepEqual(generateNotes3.args[1][1].pkgContexts[name].name, name);
+  t.deepEqual(Object.keys(generateNotes3.args[1][1]).sort(), pkgContextKeys);
+
+  t.is(prepare.callCount, 1);
+  t.deepEqual(prepare.args[0][0], config);
+  t.deepEqual(prepare.args[0][1].options, options);
+  t.deepEqual(prepare.args[0][1].branch, branch);
+  t.deepEqual(prepare.args[0][1].branches, branches);
+  t.deepEqual(prepare.args[0][1].logger, t.context.logger);
+  t.deepEqual(prepare.args[0][1].lastRelease, lastRelease);
+  t.deepEqual(prepare.args[0][1].commits[0].hash, commits[0].hash);
+  t.deepEqual(prepare.args[0][1].commits[0].message, commits[0].message);
+  t.deepEqual(prepare.args[0][1].nextRelease, {...nextRelease, notes: `${notes1}\n\n${notes2}\n\n${notes3}`});
+  t.deepEqual(prepare.args[0][1].envCi, envCi);
+  t.deepEqual(prepare.args[0][1].name, name);
+  t.deepEqual(prepare.args[0][1].pkg, pkg);
+  t.deepEqual(prepare.args[0][1].pkgs, pkgs);
+  t.deepEqual(prepare.args[0][1].rootCwd, rootCwd);
+  t.deepEqual(prepare.args[0][1].pkgContexts[name].name, name);
+  t.deepEqual(Object.keys(prepare.args[0][1]).sort(), pkgContextKeys);
+
+  t.is(publish.callCount, 1);
+  t.deepEqual(publish.args[0][0], config);
+  t.deepEqual(publish.args[0][1].options, options);
+  t.deepEqual(publish.args[0][1].branch, branch);
+  t.deepEqual(publish.args[0][1].branches, branches);
+  t.deepEqual(publish.args[0][1].logger, t.context.logger);
+  t.deepEqual(publish.args[0][1].lastRelease, lastRelease);
+  t.deepEqual(publish.args[0][1].commits[0].hash, commits[0].hash);
+  t.deepEqual(publish.args[0][1].commits[0].message, commits[0].message);
+  t.deepEqual(publish.args[0][1].nextRelease, {...nextRelease, notes: `${notes1}\n\n${notes2}\n\n${notes3}`});
+  t.deepEqual(publish.args[0][1].envCi, envCi);
+  t.deepEqual(publish.args[0][1].name, name);
+  t.deepEqual(publish.args[0][1].pkg, pkg);
+  t.deepEqual(publish.args[0][1].pkgs, pkgs);
+  t.deepEqual(publish.args[0][1].rootCwd, rootCwd);
+  t.deepEqual(publish.args[0][1].pkgContexts[name].name, name);
+  t.deepEqual(Object.keys(publish.args[0][1]).sort(), pkgContextKeys);
+
+  t.is(success.callCount, 2);
   t.deepEqual(success.args[1][0], config);
   t.deepEqual(success.args[1][1].options, options);
   t.deepEqual(success.args[1][1].branch, branch);
@@ -373,6 +549,12 @@ test('Plugins are called with expected values', async (t) => {
   t.deepEqual(success.args[1][1].nextRelease, {...nextRelease, notes: `${notes1}\n\n${notes2}\n\n${notes3}`});
   t.deepEqual(success.args[1][1].releases, [releases[1], releases[2]]);
   t.deepEqual(success.args[1][1].envCi, envCi);
+  t.deepEqual(success.args[1][1].name, name);
+  t.deepEqual(success.args[1][1].pkg, pkg);
+  t.deepEqual(success.args[1][1].pkgs, pkgs);
+  t.deepEqual(success.args[1][1].rootCwd, rootCwd);
+  t.deepEqual(success.args[1][1].pkgContexts[name].name, name);
+  t.deepEqual(Object.keys(success.args[1][1]).sort(), pkgContextKeys);
 
   t.deepEqual(result, {
     lastRelease,
