@@ -9,6 +9,7 @@ const semver = require('semver');
 const AggregateError = require('aggregate-error');
 const glob = require('glob');
 const mem = require('mem');
+const pMap = require('p-map');
 const debug = require('debug')('semantic-release:index');
 const pkg = require('./package.json');
 const hideSensitive = require('./lib/hide-sensitive');
@@ -400,42 +401,51 @@ async function run(context, plugins) {
 
 async function runSteps(context, pkgContexts, plugins, steps) {
   const {options} = context;
-  const pkgContextsArray = Object.values(pkgContexts);
 
   for (const name of Object.keys(steps)) {
-    const step = steps[name];
-
-    if (step.process) {
-      for (const pkgContext of pkgContextsArray) {
-        if (typeof pkgContext.result !== 'undefined') {
-          continue;
-        }
-
-        pkgContext.result = await step.process(pkgContext, plugins);
-      }
-    }
-
-    if (step.preprocessAll) {
-      await step.preprocessAll(context);
-    }
-
-    let allResults = [];
-    if (step.processAll !== false) {
-      allResults = await plugins[(step.name || name) + 'All'](context);
-    }
-
-    if (step.postprocessAll) {
-      await step.postprocessAll(context, allResults);
-    }
-
-    // Stop when all packages are no releases
-    const result = pkgContextsArray.find(({result}) => result !== false);
+    // eslint-disable-next-line no-await-in-loop
+    const result = await runStep(context, pkgContexts, plugins, {name, ...steps[name]});
     if (!result) {
+      // Stop when all packages are no releases
       break;
     }
   }
 
-  return options.monorepo ? map(pkgContexts, 'result') : pkgContextsArray[0].result;
+  return options.monorepo ? map(pkgContexts, 'result') : Object.values(pkgContexts)[0].result;
+}
+
+async function runStep(context, pkgContexts, plugins, step) {
+  const {options} = context;
+  const pkgContextsArray = Object.values(pkgContexts);
+
+  if (step.process) {
+    await pMap(
+      pkgContextsArray,
+      async (pkgContext) => {
+        if (typeof pkgContext.result !== 'undefined') {
+          return;
+        }
+
+        pkgContext.result = await step.process(pkgContext, plugins);
+      },
+      {concurrency: options.concurrency}
+    );
+  }
+
+  if (step.preprocessAll) {
+    await step.preprocessAll(context);
+  }
+
+  let allResults = [];
+  if (step.processAll !== false) {
+    allResults = await plugins[step.name + 'All'](context);
+  }
+
+  if (step.postprocessAll) {
+    await step.postprocessAll(context, allResults);
+  }
+
+  return pkgContextsArray.find(({result}) => result !== false);
 }
 
 function logErrors({logger, stderr}, err) {
@@ -469,16 +479,16 @@ async function getPkgs(context, plugins) {
   let pkgs = {};
   logger.log('Find packages in directories: %s', options.packages.join(', '));
 
-  for (const pkg of options.packages) {
+  await pMap(options.packages, async (pkg) => {
     const dirs = glob.sync(pkg, {cwd});
-    for (const dir of dirs) {
+    await pMap(dirs, async (dir) => {
       const name = (await getPkgName(path.join(cwd, dir))) || path.basename(dir);
       pkgs[name] = {
         name,
         path: dir,
       };
-    }
-  }
+    });
+  });
 
   pkgs = await plugins.initPkgs({...context, pkgs});
 

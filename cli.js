@@ -26,6 +26,13 @@ Usage:
     .option('e', {alias: 'extends', describe: 'Shareable configurations', ...stringList, group: 'Options'})
     .option('ci', {describe: 'Toggle CI verifications', type: 'boolean', group: 'Options'})
     .option('m', {alias: 'monorepo', describe: 'Toggle monorepo mode', type: 'boolean', group: 'Options'})
+    .option('c', {
+      alias: 'concurrency',
+      describe: 'Number of concurrently to run packages',
+      type: 'number',
+      group: 'Options',
+      default: 1,
+    })
     .option('verify-conditions', {...stringList, group: 'Plugins'})
     .option('analyze-commits', {type: 'string', group: 'Plugins'})
     .option('verify-release', {...stringList, group: 'Plugins'})
