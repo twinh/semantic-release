@@ -202,8 +202,9 @@ const steps = {
       context.nextReleaseType = await plugins.analyzeCommits(context);
     },
     postprocessAll: async (context, results) => {
-      Object.entries(results).forEach(([name, nextReleaseType]) => {
-        context.pkgContexts[name].nextReleaseType = nextReleaseType;
+      Object.entries(results).forEach(([name, nextRelease]) => {
+        // Add `nextReleaseType` and `nextReleaseVersion`
+        context.pkgContexts[name] = {...context.pkgContexts[name], ...nextRelease};
       });
 
       if (context.options.versionMode !== 'fixed') {
