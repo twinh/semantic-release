@@ -25,7 +25,7 @@ const getBranches = require('./lib/branches');
 const getLogger = require('./lib/get-logger');
 const {verifyAuth, isBranchUpToDate, getGitHead, tag, push, pushNotes, getTagHead, addNote} = require('./lib/git');
 const getError = require('./lib/get-error');
-const {COMMIT_NAME, COMMIT_EMAIL, RELEASE_TYPE, FIRST_RELEASE} = require('./lib/definitions/constants');
+const {COMMIT_NAME, COMMIT_EMAIL, RELEASE_TYPE, MIN_RELEASE} = require('./lib/definitions/constants');
 const micromatch = require('micromatch');
 
 marked.setOptions({renderer: new TerminalRenderer()});
@@ -61,6 +61,12 @@ const steps = {
 
       context.branches = await getBranches(options.repositoryUrl, ciBranch, context);
       context.branch = context.branches.find(({name}) => name === ciBranch);
+
+      // if (context.name === 'pkg3') {
+      //   console.dir(context.branches, {depth: null});
+      //   process.exit();
+      // }
+
 
       if (!context.branch) {
         logger.log(
@@ -233,7 +239,7 @@ const steps = {
           },
         });
         return semver.gt(highestVersion, nextReleaseVersion) ? highestVersion : nextReleaseVersion;
-      }, FIRST_RELEASE);
+      }, MIN_RELEASE);
 
       pkgContextArray.forEach((pkgContext) => {
         pkgContext.nextReleaseVersion = highestVersion;
