@@ -62,12 +62,6 @@ const steps = {
       context.branches = await getBranches(options.repositoryUrl, ciBranch, context);
       context.branch = context.branches.find(({name}) => name === ciBranch);
 
-      // if (context.name === 'pkg3') {
-      //   console.dir(context.branches, {depth: null});
-      //   process.exit();
-      // }
-
-
       if (!context.branch) {
         logger.log(
           `This test run was triggered on the branch ${ciBranch}, while semantic-release is configured to only publish from ${context.branches
