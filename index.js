@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const {pick, map, mapValues, forEach} = require('lodash');
+const {pick, map, mapValues, forEach, find} = require('lodash');
 const marked = require('marked');
 const TerminalRenderer = require('marked-terminal');
 const envCi = require('env-ci');
@@ -26,6 +26,7 @@ const getLogger = require('./lib/get-logger');
 const {verifyAuth, isBranchUpToDate, getGitHead, tag, push, pushNotes, getTagHead, addNote} = require('./lib/git');
 const getError = require('./lib/get-error');
 const {COMMIT_NAME, COMMIT_EMAIL, RELEASE_TYPE, FIRST_RELEASE} = require('./lib/definitions/constants');
+const micromatch = require('micromatch');
 
 marked.setOptions({renderer: new TerminalRenderer()});
 
@@ -384,6 +385,7 @@ async function run(context, plugins) {
     logger: logger.scope(logger.scopeName, pkg.name),
     options: {
       ...options,
+      ...getPkgOptions(options.packageOptions, pkg.name),
       tagFormat: options.tagFormat.replace(`\${name}`, pkg.name),
     },
     // New
@@ -398,6 +400,18 @@ async function run(context, plugins) {
   context.pkgContexts = pkgContexts;
 
   return runSteps(context, pkgContexts, plugins, steps);
+}
+
+function getPkgOptions(packageOptions, name) {
+  if (!packageOptions) {
+    return;
+  }
+
+  if (typeof packageOptions[name] !== 'undefined') {
+    return packageOptions[name];
+  }
+
+  return find(packageOptions, (options, pattern) => micromatch.isMatch(name, pattern)) || {};
 }
 
 async function runSteps(context, pkgContexts, plugins, steps) {
