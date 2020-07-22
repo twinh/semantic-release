@@ -25,6 +25,7 @@ Usage:
     .option('p', {alias: 'plugins', describe: 'Plugins', ...stringList, group: 'Options'})
     .option('e', {alias: 'extends', describe: 'Shareable configurations', ...stringList, group: 'Options'})
     .option('ci', {describe: 'Toggle CI verifications', type: 'boolean', group: 'Options'})
+    .option('s', {alias: 'since', describe: 'Limits to commits newer than specific date', group: 'Options'})
     .option('m', {alias: 'monorepo', describe: 'Toggle monorepo mode', type: 'boolean', group: 'Options'})
     .option('c', {
       alias: 'concurrency',
