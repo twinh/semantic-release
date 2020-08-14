@@ -1,7 +1,7 @@
 {
-  "name": "semantic-release",
+  "name": "monorepo-semantic-release",
   "description": "Automated semver compliant package publishing",
-  "version": "0.0.0-development",
+  "version": "18.0.0-beta.1",
   "author": "Stephan Bönnemann <stephan@boennemann.me> (http://boennemann.me)",
   "ava": {
     "files": [
@@ -10,7 +10,7 @@
     "timeout": "2m"
   },
   "bin": {
-    "semantic-release": "bin/semantic-release.js"
+    "monorepo-semantic-release": "bin/semantic-release.js"
   },
   "bugs": {
     "url": "https://github.com/semantic-release/semantic-release/issues"
