@@ -398,6 +398,7 @@ async function run(context, plugins) {
     pkgContext.pkgContexts = pkgContexts;
   });
   context.pkgContexts = pkgContexts;
+  context.getNextVersion = getNextVersion;
 
   return runSteps(context, pkgContexts, plugins, steps);
 }
